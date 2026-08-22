@@ -8,17 +8,19 @@ Based off previous processing logic written by dobh6980
 """
 
 # --------- Relevant Imports ---------
+
 import os                            # file handling
 import glob                          # glob
 import numpy as np                   # computation
 from astropy.io import fits          # fit handling
 
 import matplotlib.pyplot as plt      # plotting
-# ------ Animation ------
-from matplotlib.animation import FuncAnimation
+# Animation 
+from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
-# ------------------------------------
+
+# --------- Helper Functions ---------
 
 def _get_default_dir():
     """
@@ -39,6 +41,16 @@ def _get_observations_dir():
     """
     base = _get_default_dir()
     return os.path.abspath(os.path.join(base, '..', '..', 'CUTE_observations'))
+
+def _get_output_dir(output_dir):
+    """
+    Locates (and creates) the output folder
+    for figures to be saved to.
+    """
+    base = _get_default_dir()
+    path = os.path.abspath(os.path.join(base, '..', output_dir))
+    os.makedirs(path, exist_ok=True)   # create it if it doesn't exist yet
+    return path
 
 def _resolve_frame(folder, file_or_frmid):
     '''
@@ -81,6 +93,7 @@ def smooth(y, box_pts):
     return y_smooth
     
 # ------------------------------------
+
 class CuteReference:
     """
     Grabs all static directories/files shared by 2025 Mars CUTE Observations
@@ -142,6 +155,7 @@ class CuteReference:
         return np.interp(self.wv_soln, wave_val, eff_area)
 
 # ------------------------------------
+
 class CuteObservation:
     """
     One CUTE exposure ("visit")
@@ -190,7 +204,7 @@ class CuteObservation:
     def _build_regions(self, row_shift=0.0):
         """
         Define upper/lower edges of the science trace and of the background
-        strip, as a y-value for each science column. `row_shift` moves every
+        strip as a y-value for each science column. `row_shift` moves every
         edge up(+)/down(-) by that many rows (used by auto-tracking).
         """
         nx = self.nx
@@ -221,7 +235,7 @@ class CuteObservation:
         self.yval1_dk = y1_dk + m1_dk * (self.xval - x_left)   # dark  lower
         self.yval2_dk = y3_dk + m2_dk * (self.xval - x_left)   # dark  upper
 
-    def _measure_trace_offset(self, band=50, frac=0.5):
+    def _measure_trace_offset(self, band=100, frac=0.5):
         """
         Estimate how far the trace has drifted (in rows)
         """
@@ -364,13 +378,16 @@ class CuteObservation:
     @classmethod
     def animate_visit(cls, visit, reference=None, kind='both', fps=5,
                     box_pts=5, xlim=(2490, 3250), ylim=None,
-                    vmin=None, vmax=None, pattern='*.fits'):
+                    vmin=None, vmax=None, pattern='*.fits',
+                    save=False, output_dir=None):
         '''
         Animate every FITS frame in a visit folder, in frame-id order, and DISPLAY
         it (nothing is saved). Two separate windows by default:
-            kind='spectrum' -> 1D spectrum movie
-            kind='trace'    -> 2D trace + boundaries movie
-            kind='both'     -> both windows at once (default)
+            kind='spectrum' : 1D spectrum movie
+            kind='trace'    : 2D trace + boundaries movie
+            kind='both'     : both windows at once (default)
+            save=False      : DISPLAY on screen only
+            save=True       : write on GIF per kind into output_dir
         '''
         if reference is None:
             reference = CuteReference()
@@ -379,13 +396,22 @@ class CuteObservation:
         files = sorted(glob.glob(os.path.join(folder, pattern)), key=cls._frmid_of)
         if not files:
             raise FileNotFoundError(f'No {pattern!r} files found in {folder}')
+        if save and output_dir is None:
+            raise ValueError("save=True needs an output_dir")
 
         kinds = ['spectrum', 'trace'] if kind == 'both' else [kind]
-        # keep the FuncAnimation objects referenced until the windows close, or
-        # Python garbage-collects them and the movies freeze.
-        anims = [cls._animate_one(files, reference, visit, k, fps,
-                                box_pts, xlim, ylim, vmin, vmax) for k in kinds]
-        plt.show()
+        # keep the FuncAnimation objects referenced until they're shown/saved
+        anims = []
+        for k in kinds:
+            anim = cls._animate_one(files, reference, visit, k, fps,
+                                    box_pts, xlim, ylim, vmin, vmax)
+            anims.append(anim)
+            if save:
+                gif_path = os.path.join(output_dir, f"{visit}_{k}.gif")
+                anim.save(gif_path, writer=PillowWriter(fps=fps))
+                print(f"Saved {gif_path}")
+
+        plt.show()          # always display, whether or not we saved
         return anims
 
     @classmethod
