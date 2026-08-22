@@ -31,7 +31,7 @@ STATIC = False
 SAVE = True
 output_dir = 'output'
 
-VISIT = "Visit5"
+VISIT = "Visit6"
 # e.g "Visit2" or "Visit3" or ...
 
 # if STATIC = True:

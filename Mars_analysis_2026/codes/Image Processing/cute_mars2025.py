@@ -168,6 +168,7 @@ class CuteObservation:
     H = 6.626075540e-27         # erg s
     C = 2.99792458e+10          # cm / s
     N_SCI_PIX = 2048            # science pixels (excludes overscan)
+    APERTURE = 1.5             # science half-height = APERATURE *(measured FWHM / 2)
 
     def __init__(
         self, fits_fname, reference: CuteReference, visit=None, base_dir=None, track=True
@@ -185,8 +186,13 @@ class CuteObservation:
         self.row_offset = 0.0
         self._build_regions()
         if track:
-            self.row_offset = self._measure_trace_offset()
-            self._build_regions(row_shift=self.row_offset)
+            self.row_offset, self.trace_fwhm = self._measure_trace_shape()
+            i_mid = len(self.xval) // 2
+            h0 = 0.5 * (self.yval2_sc[i_mid] - self.yval1_sc[i_mid])   # nominal half-height
+            if self.trace_fwhm > 0:
+                half_target = self.APERTURE * (self.trace_fwhm / 2.0)
+                self.sci_grow = max(half_target - h0, 1 - h0)          # never collapse below ~1px
+            self._build_regions(row_shift=self.row_offset, sci_grow=self.sci_grow)
 
         self.spectra = self.extract_spectrum()
         self.flux = self._compute_flux()
@@ -203,7 +209,7 @@ class CuteObservation:
             exptime = exptime_ms / 1000.0
         return img, exptime
 
-    def _build_regions(self, row_shift=0.0):
+    def _build_regions(self, row_shift=0.0, sci_grow=0.0):
         """
         Define upper/lower edges of the science trace and of the background
         strip as a y-value for each science column. `row_shift` moves every
@@ -211,10 +217,11 @@ class CuteObservation:
         """
         nx = self.nx
         s = row_shift
+        g = sci_grow
 
         # science trace edges
-        y1_sc, y2_sc = 37 - 1 + s, 69 - 1 + s   # lower edge: left, right
-        y3_sc, y4_sc = 59 - 1 + s, 88 - 1 + s   # upper edge: left, right
+        y1_sc, y2_sc = 37 - 1 + s - g, 69 - 1 + s - g   # lower edge
+        y3_sc, y4_sc = 59 - 1 + s + g, 88 - 1 + s + g   # upper edge
         # dark background (strip) edges, below trace
         y1_dk, y2_dk = 7 - 1 + s, 39 - 1 + s
         y3_dk, y4_dk = 29 - 1 + s, 58 - 1 + s
@@ -237,9 +244,14 @@ class CuteObservation:
         self.yval1_dk = y1_dk + m1_dk * (self.xval - x_left)   # dark  lower
         self.yval2_dk = y3_dk + m2_dk * (self.xval - x_left)   # dark  upper
 
-    def _measure_trace_offset(self, band=100, frac=0.5):
+    def _measure_trace_shape(self, band=100, frac=0.5):
         """
-        Estimate how far the trace has drifted (in rows)
+        Estimate how far the trace has drifted (in rows).
+        Takes a band of columns and collapses it to a
+        single vertical profile, one brightness per
+        detector row.
+        Takes every bright row and compares it to where the
+        expected nominal center is, then outputs as offset.
         """
         i_mid = len(self.xval) // 2
         c_mid = int(self.xval[i_mid])
@@ -249,15 +261,17 @@ class CuteObservation:
         prof = np.median(self.img[:, c_lo:c_hi], axis=1).astype(float)
         prof -= np.median(prof)             # remove background level
         prof = np.clip(prof, 0, None)       # keep only positive signal
-        if prof.max() <= 0:                 # nothing bright -> no shift
-            return 0.0
+        if prof.max() <= 0:                 # nothing bright
+            return 0.0, 0.0
 
-        weights = np.where(prof >= frac * prof.max(), prof, 0.0)
+        mask = prof >= frac * prof.max()
         rows = np.arange(prof.size)
+        weights = np.where(mask, prof, 0.0)
         center = float((rows * weights).sum() / weights.sum())
+        fwhm = float(mask.sum())            # rows above half-max ~ FWHM
 
         nominal = 0.5 * (self.yval1_sc[i_mid] + self.yval2_sc[i_mid])
-        return center - nominal
+        return center - nominal, fwhm
 
     # --------- reduction ---------
     def extract_spectrum(self):
@@ -370,7 +384,9 @@ class CuteObservation:
 
     @staticmethod
     def _frmid_of(path):
-        '''Frame-id number from a filename, for sorting frames in order.'''
+        '''
+        Frame-id number from a filename, for sorting frames in order.
+        '''
         parts = os.path.basename(path).split('_')
         if 'frmid' in parts:
             tok = parts[parts.index('frmid') + 1]
