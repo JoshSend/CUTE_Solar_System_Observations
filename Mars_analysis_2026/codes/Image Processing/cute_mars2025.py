@@ -1,78 +1,151 @@
-'''
+"""
 Image Processing for the NASA CUTE (Colorado Ultraviolet Transit Experiment)
 2025 Mars Observations in Near Ultraviolet
 @Author: jose5987
-Date Created: 8/20/2026
+Date Created: 8/21/2026
 
 Based off previous processing logic written by dobh6980
-'''
+"""
 
-# Relevant Imports
+# --------- Relevant Imports ---------
 import os                            # file handling
+import glob                          # glob
 import numpy as np                   # computation
 from astropy.io import fits          # fit handling
-from numpy.typing import NDArray     # type hinting
+
 import matplotlib.pyplot as plt      # plotting
-# Animation (gif)
-from matplotlib.animation import FuncAnimation, PillowWriter 
-import glob
-import re
+# ------ Animation ------
+from matplotlib.animation import FuncAnimation
+from matplotlib.cm import ScalarMappable
+from matplotlib.colors import Normalize
+# ------------------------------------
 
-# ====================================================
-
-def _default_base_dir() -> str:
-    '''
+def _get_default_dir():
+    """
     All input files are read from the folder this script lives in,
     so the whole folder is portable.
-    '''
+    """
     try:
-        return os.path.dirname(os.path.abspath(__file__))
+        base_dir = os.path.dirname(os.path.abspath(__file__))
     except NameError:
-        return os.getcwd()
+        base_dir = os.getcwd()
+
+    return base_dir
+
+def _get_observations_dir():
+    """
+    Locates the CUTE_observations root folder
+    relative to script location.
+    """
+    base = _get_default_dir()
+    return os.path.abspath(os.path.join(base, '..', '..', 'CUTE_observations'))
+
+def _resolve_frame(folder, file_or_frmid):
+    '''
+    Turn `file_or_frmid` into a full FITS path inside `folder`.
+    Accepts either a full filename ('...frmid_4868_...fits') or a frame id
+    (the int 4868, or the string '4868'), which is looked up in the folder.
+    '''
+    s = str(file_or_frmid)
+    if s.endswith('.fits'):                       # a full filename was given
+        path = os.path.join(folder, s)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f'FITS file not found at: {path}')
+        return path
+
+    frmid = int(file_or_frmid)                    # otherwise treat as a frame id
+    hits = [p for p in glob.glob(os.path.join(folder, '*.fits'))
+            if CuteObservation._frmid_of(p) == frmid]
+    if not hits:
+        raise FileNotFoundError(f'No FITS file with frmid {frmid} in {folder}')
+    if len(hits) > 1:
+        raise ValueError(f'Multiple files with frmid {frmid} in {folder}: '
+                         f'{[os.path.basename(h) for h in hits]}')
+    return hits[0]
+
+def load_observation(visit, filename, reference=None):
+    """
+    Loads a single CuteObservation. `filename` may be a full FITS filename
+    OR a frame id (e.g. 4868), which is looked up in the visit folder.
+    """
+    if reference is None:
+        reference = CuteReference()
+
+    folder = os.path.join(_get_observations_dir(), visit)
+    full_path = _resolve_frame(folder, filename)
+    return CuteObservation(full_path, reference=reference, visit=visit)
 
 def smooth(y, box_pts):
-    '''
-    Smoothing 1D spectrum
-    '''
     box = np.ones(box_pts) / box_pts
-    return np.convolve(y, box, mode='same')
-
-# ------------------------------
-
+    y_smooth = np.convolve(y, box, mode="same")
+    return y_smooth
+    
+# ------------------------------------
 class CuteReference:
-    '''
-    Shared calibration data used by every visit.
+    """
+    Grabs all static directories/files shared by 2025 Mars CUTE Observations
 
-    wave_sol : wavelength for each of the 2048 science pixels
-    eff_area : effective area, resampled onto wave_sol
-    '''
+    Directories/Files to grab:
+        base directory
+        effective area
+        wavelength solution
+    """
+
+    eff_area_fname = 'cute_recalculated_effa_2025.txt'
+    wv_soln_fname  = 'flight_quad_wavelength_solution_final.dat'
 
     def __init__(self, base_dir=None):
-        self.base_dir = base_dir or _default_base_dir()
-        self.wave_sol = self._load_wavelength_solution()
-        self.eff_area = self._load_effective_area()
+        self.base_dir       = base_dir or _get_default_dir()  
+        self.wv_soln  = self._get_wv_soln()
+        self.eff_area = self._get_eff_area()
 
-    def _load_wavelength_solution(self):
-        path = os.path.join(self.base_dir,
-                            'flight_quad_wavelength_solution_final.dat')
-        # column 0 is wavelength; 1-line header
-        return np.loadtxt(path, skiprows=1, usecols=0)
+    def _get_wv_soln(self):
+        path = os.path.join(self.base_dir, CuteReference.wv_soln_fname)
+        wave_sol = []
+        data = open(path, 'r')
+        lines = data.readlines()
 
-    def _load_effective_area(self):
-        path = os.path.join(self.base_dir,
-                            'cute_recalculated_effa_2025.txt')
-        # 2-line header; col 0 = eff area, col 1 = wavelength
-        data = np.loadtxt(path, skiprows=2)
-        eff_area, wv_val = data[:, 0], data[:, 1]
-        # resample onto pixel wavelength grid
-        return np.interp(self.wave_sol, wv_val, eff_area)
+        count = 0
+        for j in lines:
+            if count > 0:
+                li = j.strip()
+                st = j.split()
+                ww = float(st[0])
+                wave_sol.append(ww)
+            count = count + 1
 
-# ------------------------------
+        return np.array(wave_sol)
 
-class CuteVisit:
-    '''
+    def _get_eff_area(self):
+        path = os.path.join(self.base_dir, CuteReference.eff_area_fname)
+
+        eff_area = []
+        wave_val = []
+
+        data = open(path, 'r')
+        lines = data.readlines()
+
+        count = 0
+        for j in lines:
+            if count > 1:
+                li = j.strip()
+                st = j.split()
+                ww = float(st[1])
+                ee = float(st[0])
+                eff_area.append(ee)
+                wave_val.append(ww)
+            count = count + 1
+
+        eff_area = np.array(eff_area)
+        wave_val = np.array(wave_val)
+
+        return np.interp(self.wv_soln, wave_val, eff_area)
+
+# ------------------------------------
+class CuteObservation:
+    """
     One CUTE exposure ("visit")
-    '''
+    """
 
     # --------- constants -> class attributes ---------
     GAIN = 1.5                  # electrons per DN
@@ -80,41 +153,55 @@ class CuteVisit:
     C = 2.99792458e+10          # cm / s
     N_SCI_PIX = 2048            # science pixels (excludes overscan)
 
-    def __init__(self, fname, reference: CuteReference, base_dir=None):
-        self.fname = fname
+    def __init__(
+        self, fits_fname, reference: CuteReference, visit=None, base_dir=None, track=True
+    ):
+        self.fits_fname = fits_fname
         self.reference = reference
         self.base_dir = base_dir or reference.base_dir
 
-        self.img = self._load_image()
-        self.nx = self.img.shape[1]
+        self.visit = visit
+        self.frame_id = self._extract_frame_id()
+
+        self.img, self.exptime = self._load_image()
+        self.nx = self.img.shape[1] # 2200 columns = 2048 science pixels + overscan on both ends
+
+        self.row_offset = 0.0
         self._build_regions()
+        if track:
+            self.row_offset = self._measure_trace_offset()
+            self._build_regions(row_shift=self.row_offset)
 
-        # Processing Steps
-        self.spectrum_dn = None     # summed dark-subtracted counts
-        self.spectrum_phot = None   # calibrated spectrum
+        self.spectra = self.extract_spectrum()
+        self.flux = self._compute_flux()
 
-    # ---------- loading ----------
     def _load_image(self):
-        path = os.path.join(self.base_dir, self.fname)
-        with fits.open(path, memmap=False) as ff:
-            # flip left-right so column number increases with wavelength
-            return np.fliplr(ff[0].data)
+        with fits.open(self.fits_fname) as fits_file:
+            img = np.fliplr(fits_file[0].data)
+            # CUTE's EXPTIME header is in MILLISECONDS -> convert to seconds
+            exptime_ms = float(
+                fits_file[0].header.get(
+                    'EXPTIME', fits_file[0].header.get('EXPOSURE', 100000.0)
+                )
+            )
+            exptime = exptime_ms / 1000.0
+        return img, exptime
 
-    # ---------- geometry ----------
-    def _build_regions(self):
-        '''
-        Define upper/lower edges of the science trace and of
-        the background strip, as a y-value for each science
-        column.
-        '''
+    def _build_regions(self, row_shift=0.0):
+        """
+        Define upper/lower edges of the science trace and of the background
+        strip, as a y-value for each science column. `row_shift` moves every
+        edge up(+)/down(-) by that many rows (used by auto-tracking).
+        """
         nx = self.nx
+        s = row_shift
 
         # science trace edges
-        y1_sc, y2_sc = 37 - 1, 69 - 1     # lower edge: left, right
-        y3_sc, y4_sc = 59 - 1, 88 - 1     # upper edge: left, right
-        # background (dark) strip edges, just below the trace
-        y1_dk, y2_dk = 7 - 1, 39 - 1
-        y3_dk, y4_dk = 29 - 1, 58 - 1
+        y1_sc, y2_sc = 37 - 1 + s, 69 - 1 + s   # lower edge: left, right
+        y3_sc, y4_sc = 59 - 1 + s, 88 - 1 + s   # upper edge: left, right
+        # dark background (strip) edges, below trace
+        y1_dk, y2_dk = 7 - 1 + s, 39 - 1 + s
+        y3_dk, y4_dk = 29 - 1 + s, 58 - 1 + s
 
         x_left = nx - 1 - (52 - 1)        # flipped col of raw pixel 52
         x_right = nx - 1 - (2099 - 1)     # flipped col of raw pixel 2099
@@ -134,231 +221,204 @@ class CuteVisit:
         self.yval1_dk = y1_dk + m1_dk * (self.xval - x_left)   # dark  lower
         self.yval2_dk = y3_dk + m2_dk * (self.xval - x_left)   # dark  upper
 
-    # ---------- reduction ----------
+    def _measure_trace_offset(self, band=50, frac=0.5):
+        """
+        Estimate how far the trace has drifted (in rows)
+        """
+        i_mid = len(self.xval) // 2
+        c_mid = int(self.xval[i_mid])
+        c_lo = max(c_mid - band, 0)
+        c_hi = min(c_mid + band, self.nx)
+
+        prof = np.median(self.img[:, c_lo:c_hi], axis=1).astype(float)
+        prof -= np.median(prof)             # remove background level
+        prof = np.clip(prof, 0, None)       # keep only positive signal
+        if prof.max() <= 0:                 # nothing bright -> no shift
+            return 0.0
+
+        weights = np.where(prof >= frac * prof.max(), prof, 0.0)
+        rows = np.arange(prof.size)
+        center = float((rows * weights).sum() / weights.sum())
+
+        nominal = 0.5 * (self.yval1_sc[i_mid] + self.yval2_sc[i_mid])
+        return center - nominal
+
+    # --------- reduction ---------
     def extract_spectrum(self):
-        '''
-        For each column, take the median dark level,
-        then sum dark-subtracted counts inside the trace.
-        Returns a 2048-long spectrum already running short->long
-        wavelengths (image was flipped)
-        '''
-        spectrum = np.zeros(self.N_SCI_PIX, dtype=float)
+        dk_arr = np.zeros(2048, dtype=float)
+        sc_arr = np.zeros(2048, dtype=float)
+        nrows = self.img.shape[0]
+        clamp = lambda v: min(max(int(round(v)), 0), nrows)
 
-        for i in range(self.N_SCI_PIX):
-            col = int(self.xval[i])
+        for i in range(2048):
+            col = self.xval[i]
 
-            dk_lo, dk_hi = int(self.yval1_dk[i]), int(self.yval2_dk[i])
-            dark = np.median(self.img[dk_lo:dk_hi, col])
+            yy1, yy2 = clamp(self.yval1_dk[i]), clamp(self.yval2_dk[i])
+            dk_arr[i] = np.median(self.img[yy1:yy2, col]) if yy2 > yy1 else 0.0
 
-            sc_lo, sc_hi = int(self.yval1_sc[i]), int(self.yval2_sc[i])
-            spectrum[i] = np.sum(self.img[sc_lo:sc_hi, col] - dark)
+            yy3, yy4 = clamp(self.yval1_sc[i]), clamp(self.yval2_sc[i])
+            if yy4 > yy3:
+                sc_arr[i] = np.sum(self.img[yy3:yy4, col] - dk_arr[i])
 
-        self.spectrum_dn = spectrum
-        return spectrum
+        return sc_arr
 
-    def to_photons(self) -> NDArray:
-        '''
-        Convert the DN spectrum to photons using gain + effective area.
-        '''
-        if self.spectrum_dn is None:
-            self.extract_spectrum()
-
-        wave_sol = self.reference.wave_sol
+    def _compute_flux(self):
+        """
+        Converts DN spectrum to photon flux density
+        in units of 10^-9 erg/s/cm^2/A.
+        """
+        wave_sol = self.reference.wv_soln
         eff_area = self.reference.eff_area
 
-        spec_e = self.spectrum_dn * (self.GAIN / 100.0)          # DN -> e-
-        self.spectrum_phot = spec_e * (self.H * self.C) / (
-            (wave_sol * 1e-8) * eff_area)                        # e- -> photons
-        return self.spectrum_phot
+        # Wavelength pixel dispersion bin size (Angstroms / pixel)
+        dwave = np.gradient(wave_sol)
 
-    def process(self) -> NDArray:
-        '''
-        Convenience: run the whole reduction
-        and return the photon spectrum.
-        '''
-        self.extract_spectrum()
-        return self.to_photons()
+        # Count rate in electrons/s using header exposure time
+        mars_spec_e = self.spectra * (self.GAIN / self.exptime)
 
-    # ---------- diagnostics / output ----------
-    '''
-    Two '_draw_*' helpers put their content on an axes that is passed in.
-    That way standalone views and the combined two-panel view all share
-    *one definition of each plot.
-    '''
-    def _draw_regions(self, ax, vmin=None, vmax=None, title=None):
-        '''
-        Draw the image with the trace (red) and background (yellow) boundaries
-        onto `ax`. If vmin/vmax are None they are chosen from the image, so each
-        visit scales to its own levels. Returns the image handle (for colorbar).
-        '''
+        #  Wavelength in cm
+        wave_cm = wave_sol * 1.0e-8
+
+        # Raw CGS flux density (erg s^-1 cm^-2 A^-1)
+        flux_cgs = (mars_spec_e * self.H * self.C) / (
+            wave_cm * eff_area * dwave
+        )
+
+        # Scale to 10^-9 units to plot on 0.0 - 2.0 range
+        flux_1e9 = flux_cgs / 1.0e-9
+
+        return flux_1e9
+
+    # --------- outputs ---------
+    def _extract_frame_id(self):
+        """
+        Parses the 'frmid_####' token out of
+        filename strings
+        """
+        bare_name = os.path.basename(self.fits_fname)
+        parts = bare_name.split('_')
+
+        if "frmid" in parts:
+            idx = parts.index('frmid')
+            return parts[idx + 1]
+        
+        return "Unknown"
+
+    def plot_trace(self, title=None, vmin=None, vmax=None, ax=None):
+        if title is None:
+            visit_str = f"{self.visit} " if self.visit else ""
+            title = f"Mars - {visit_str}frmid {self.frame_id}"
         if vmin is None:
-            vmin = np.percentile(self.img, 5)     # dark end
+            vmin = np.percentile(self.img, 5)
         if vmax is None:
-            vmax = np.percentile(self.img, 99)    # bright end
- 
-        ax.set_title(title or self.fname)
-        ax.plot(self.xval, self.yval1_sc, lw=3, color='red')
-        ax.plot(self.xval, self.yval2_sc, lw=3, color='red')
-        ax.plot(self.xval, self.yval1_dk, lw=3, color='yellow')
-        ax.plot(self.xval, self.yval2_dk, lw=3, color='yellow')
-        im = ax.imshow(self.img, vmin=vmin, vmax=vmax, origin='lower',
-                       aspect='auto', interpolation='none')
-        return im
- 
-    def _draw_spectrum(self, ax, title='Mars NUV Spectra with CUTE', box_pts=15):
-        '''Draw the calibrated, smoothed 1D spectrum onto `ax`.'''
-        if self.spectrum_phot is None:
-            self.to_photons()
- 
-        ax.grid(color='gray', linestyle='dashed')
-        ax.set_title(title, fontsize=16)
-        ax.tick_params(axis='both', which='major', labelsize=12)
-        ax.set_xlabel(r'Wavelength ($\AA$)', fontsize=13)
-        ax.set_ylabel(r'Flux (10$^{-9}$ erg s$^{-1}$ cm$^{-2}$ $\AA^{-1}$)',
-                      fontsize=13)
-        ax.set_xlim(2500, 3250)
-        ax.set_ylim(0., 2.)
-        ax.plot(self.reference.wave_sol,
-                smooth(self.spectrum_phot, box_pts) * 1e9,
-                color='darkred', lw=2)
- 
-    def plot_regions(self, vmin=None, vmax=None, title=None):
-        '''Standalone region-check image.'''
-        fig, ax = plt.subplots()
-        im = self._draw_regions(ax, vmin, vmax, title)
-        fig.colorbar(im, ax=ax)
-        plt.show()
- 
-    def show_spectrum(self, title='Mars NUV Spectra with CUTE', box_pts=15):
-        '''Standalone 1D spectrum (no saving).'''
-        fig, ax = plt.subplots(figsize=(10, 3.5))
-        self._draw_spectrum(ax, title, box_pts)
-        fig.tight_layout()
-        plt.show()
- 
-    def show_summary(self, title=None, box_pts=15):
-        '''
-        Two-panel figure: the region-check image on top and the reduced 1D
-        spectrum below, so you can see whether the trace boundaries line up
-        with where the signal actually falls.
-        '''
-        label = title or self.fname
-        fig, (ax_img, ax_spec) = plt.subplots(
-            2, 1, figsize=(10, 7),
-            gridspec_kw={'height_ratios': [1, 1]})
- 
-        im = self._draw_regions(ax_img, title=f'Mars ({label})')
-        fig.colorbar(im, ax=ax_img)
-        self._draw_spectrum(ax_spec, title=f'{label} NUV Spectra with CUTE',
-                            box_pts=box_pts)
- 
-        fig.tight_layout()
-        plt.show()
+            vmax = np.percentile(self.img, 99)
 
-# ------------------------------
+        own = ax is None
+        fig, ax = plt.subplots() if own else (ax.figure, ax)
 
-class CuteMovie:
-    '''
-    Builds an animated GIf from every FITS frame in one visit folder
+        ax.set_title(title)
+        im = ax.imshow(self.img, vmin=vmin, vmax=vmax, origin='lower', aspect='auto')
+        ax.plot(self.xval, self.yval1_sc, color='r', lw=2)
+        ax.plot(self.xval, self.yval2_sc, color='r', lw=2)
+        ax.plot(self.xval, self.yval1_dk, color='y', lw=2)
+        ax.plot(self.xval, self.yval2_dk, color='y', lw=2)
+        if own:                       # only add a colorbar for a standalone figure
+            fig.colorbar(im, ax=ax)
+        return fig, ax
 
-    Each movie frame is the two-panel view (region-check on top, 1D spectrum below)
-    for one FITS file, played in frame-ID order. 
-    Pulls from CuteVisit to loop over frames.
-    '''
 
-    def __init__(self, folder, reference: CuteReference, pattern='*.fits'):
-        self.folder = folder
-        self.reference = reference
-        self.files = self._gather_files(pattern)
-        if not self.files:
-            raise FileNotFoundError(
-                f'No files matching {pattern!r} in {folder}')
- 
-    def _gather_files(self, pattern):
-        '''Find the FITS files and order them by frame id (frmid_XXXX).'''
-        paths = glob.glob(os.path.join(self.folder, pattern))
- 
-        def sort_key(path):
-            m = re.search(r'frmid_(\d+)', os.path.basename(path))
-            # numeric frame id if present, else fall back to the name
-            return (0, int(m.group(1))) if m else (1, os.path.basename(path))
- 
-        return sorted(paths, key=sort_key)
- 
-    @staticmethod
-    def _frame_label(path):
-        name = os.path.basename(path)
-        m = re.search(r'frmid_(\d+)', name)
-        return f'frmid {m.group(1)}' if m else name
- 
-    def make_gif(self, outfile, fps=5, vmin=None, vmax=None, box_pts=15,
-                 view='summary'):
-        '''
-        Render all frames to an animated GIF.
- 
-        fps        : frames per second in the movie
-        vmin, vmax : image brightness scale. Left as None, they are fixed once
-                     from the first frame so the movie doesn't flicker. Pass
-                     numbers to force a scale that suits the whole set.
-        view       : which panels to animate --
-                     'summary'  -> region image + 1D spectrum (default)
-                     'spectrum' -> 1D spectrum only
-                     'regions'  -> region-check image only
-        '''
-        if view not in ('summary', 'spectrum', 'regions'):
-            raise ValueError(
-                f"view must be 'summary', 'spectrum', or 'regions', "
-                f"not {view!r}")
- 
-        show_img = view in ('summary', 'regions')
-        show_spec = view in ('summary', 'spectrum')
- 
-        # a fixed brightness scale is only needed when the image is shown
-        if show_img and (vmin is None or vmax is None):
-            first = CuteVisit(self.files[0], self.reference)
-            if vmin is None:
-                vmin = np.percentile(first.img, 5)
-            if vmax is None:
-                vmax = np.percentile(first.img, 99)
- 
-        visit_name = os.path.basename(os.path.normpath(self.folder))
-        n = len(self.files)
- 
-        # build a 2-panel or 1-panel figure to match the chosen view
-        if view == 'summary':
-            fig, (ax_img, ax_spec) = plt.subplots(
-                2, 1, figsize=(10, 7), gridspec_kw={'height_ratios': [1, 1]})
-        elif view == 'regions':
-            fig, ax_img = plt.subplots(figsize=(10, 4))
-            ax_spec = None
-        else:  # 'spectrum'
-            fig, ax_spec = plt.subplots(figsize=(10, 3.5))
-            ax_img = None
- 
-        def draw_frame(i):
-            path = self.files[i]
-            print(f'  frame {i + 1}/{n}: {os.path.basename(path)}')
-            visit = CuteVisit(path, self.reference)
-            visit.process()
-            frame_title = f'{visit_name}  {self._frame_label(path)}'
- 
-            if ax_img is not None:
-                ax_img.clear()
-                visit._draw_regions(ax_img, vmin=vmin, vmax=vmax,
-                                    title=frame_title)
-            if ax_spec is not None:
-                ax_spec.clear()
-                # in spectrum-only mode, label each frame on the spectrum itself
-                spec_title = (frame_title if view == 'spectrum'
-                              else 'Mars NUV Spectra with CUTE')
-                visit._draw_spectrum(ax_spec, title=spec_title, box_pts=box_pts)
+    def plot_spectrum(self, box_pts=5, title=None, xlim=(2490, 3250),
+                    ylim=(0.0, 2.0), ax=None):
+        if title is None:
+            visit_str = f"{self.visit}" if self.visit else ""
+            title = f"Mars NUV Spectra with CUTE - {visit_str} frmid {self.frame_id}"
+
+        own = ax is None
+        fig, ax = plt.subplots(figsize=(10, 4)) if own else (ax.figure, ax)
+
+        ax.plot(self.reference.wv_soln, smooth(self.flux, box_pts),
+                color="maroon", lw=1.5)
+        ax.set_title(title)
+        ax.set_xlabel(r"Wavelength ($\AA$)")
+        ax.set_ylabel(
+            r"Flux ($10^{-9}\ \mathrm{erg}\ \mathrm{s}^{-1}\ \mathrm{cm}^{-2}\ \mathrm{\AA}^{-1}$)"
+        )
+        if xlim:
+            ax.set_xlim(xlim)
+        if ylim:
+            ax.set_ylim(ylim)
+        ax.grid(True, linestyle="--", linewidth=0.7, alpha=0.7)
+        if own:
             fig.tight_layout()
- 
-        # `anim` must stay referenced while the window is open, or Python
-        # garbage-collects it and the animation freezes. plt.show() blocks
-        # until you close the window, so keeping it local here is enough.
-        anim = FuncAnimation(fig, draw_frame, frames=n,
-                             interval=1000 / fps)
-        print(f'  playing {n} frames (view={view}) -- close the window to continue')
+        return fig, ax
+
+    @staticmethod
+    def _frmid_of(path):
+        '''Frame-id number from a filename, for sorting frames in order.'''
+        parts = os.path.basename(path).split('_')
+        if 'frmid' in parts:
+            tok = parts[parts.index('frmid') + 1]
+            return int(tok) if tok.isdigit() else tok
+        return os.path.basename(path)
+
+    @classmethod
+    def animate_visit(cls, visit, reference=None, kind='both', fps=5,
+                    box_pts=5, xlim=(2490, 3250), ylim=None,
+                    vmin=None, vmax=None, pattern='*.fits'):
+        '''
+        Animate every FITS frame in a visit folder, in frame-id order, and DISPLAY
+        it (nothing is saved). Two separate windows by default:
+            kind='spectrum' -> 1D spectrum movie
+            kind='trace'    -> 2D trace + boundaries movie
+            kind='both'     -> both windows at once (default)
+        '''
+        if reference is None:
+            reference = CuteReference()
+
+        folder = os.path.join(_get_observations_dir(), visit)
+        files = sorted(glob.glob(os.path.join(folder, pattern)), key=cls._frmid_of)
+        if not files:
+            raise FileNotFoundError(f'No {pattern!r} files found in {folder}')
+
+        kinds = ['spectrum', 'trace'] if kind == 'both' else [kind]
+        # keep the FuncAnimation objects referenced until the windows close, or
+        # Python garbage-collects them and the movies freeze.
+        anims = [cls._animate_one(files, reference, visit, k, fps,
+                                box_pts, xlim, ylim, vmin, vmax) for k in kinds]
         plt.show()
-        plt.close(fig)
+        return anims
+
+    @classmethod
+    def _animate_one(cls, files, reference, visit, kind, fps,
+                    box_pts, xlim, ylim, vmin, vmax):
+        n = len(files)
+        first = cls(files[0], reference, visit=visit)   # probe for stable scaling
+
+        if kind == 'spectrum':
+            fig, ax = plt.subplots(figsize=(10, 4))
+            if ylim is None:                            # fixed y-range = no flicker
+                ylim = (0.0, 1.15 * float(np.nanmax(first.flux)))
+
+            def draw(i):
+                ax.clear()
+                cls(files[i], reference, visit=visit).plot_spectrum(
+                    ax=ax, box_pts=box_pts, xlim=xlim, ylim=ylim)
+
+        elif kind == 'trace':
+            fig, ax = plt.subplots()
+            if vmin is None:
+                vmin = float(np.percentile(first.img, 5))
+            if vmax is None:
+                vmax = float(np.percentile(first.img, 99))
+            fig.colorbar(ScalarMappable(norm=Normalize(vmin, vmax)), ax=ax)
+
+            def draw(i):
+                ax.clear()
+                cls(files[i], reference, visit=visit).plot_trace(
+                    ax=ax, vmin=vmin, vmax=vmax)
+
+        else:
+            raise ValueError(
+                f"kind must be 'spectrum', 'trace', or 'both', not {kind!r}")
+
+        return FuncAnimation(fig, draw, frames=n, interval=1000 / fps)

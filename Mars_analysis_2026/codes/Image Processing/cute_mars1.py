@@ -29,6 +29,7 @@ def smooth(y, box_pts):
 #----------------------------------------
 #Get the name of the specific CUTE Mars file and open it
 fname    = 'cute_TRIM2D_scan_targetID340_2025_02_03_03_58_frmid_5029_V2_nimgpkts_446_L1id19767_botrows_24_midrows_56.fits'
+
 dir_name = base_dir
 
 ff       = fits.open(os.path.join(dir_name,fname),memmap=False)
