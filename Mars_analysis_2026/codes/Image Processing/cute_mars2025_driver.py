@@ -36,10 +36,11 @@ VISIT = "Visit2"
 
 # if STATIC = True:
 #   Input file name str OR specific frame id as an int
-FILENAME = 4874
+FILENAME = None
 # e.g 4874 or 'cute_TRIM2D_scan_..._frmid_4874_..._midrows_55.fits' 
 
 # WORK ORDER: files can have same frameid but differed midrows.
+# WORK ORDER: tracking needs to be able to adjust width and height (currently only height)
 
 #==============================================
 
