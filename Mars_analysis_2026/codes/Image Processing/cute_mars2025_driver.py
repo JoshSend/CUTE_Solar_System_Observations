@@ -26,12 +26,12 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #                  then displays.
 #   SAVE = False : only displays the output.
 
-STATIC = True
+STATIC = False
 
-SAVE = False
+SAVE = True
 output_dir = 'output'
 
-VISIT = "Visit2"
+VISIT = "Visit5"
 # e.g "Visit2" or "Visit3" or ...
 
 # if STATIC = True:
@@ -46,7 +46,7 @@ FILENAME = None
 
 def main():
     ref = CuteReference()
-    out_path = _get_output_dir(output_dir)
+    out_path = _get_output_dir(output_dir, VISIT)
 
     if STATIC:
         if FILENAME is None:

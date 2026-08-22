@@ -42,13 +42,15 @@ def _get_observations_dir():
     base = _get_default_dir()
     return os.path.abspath(os.path.join(base, '..', '..', 'CUTE_observations'))
 
-def _get_output_dir(output_dir):
+def _get_output_dir(output_dir, visit=None):
     """
     Locates (and creates) the output folder
     for figures to be saved to.
     """
     base = _get_default_dir()
     path = os.path.abspath(os.path.join(base, '..', output_dir))
+    if visit: # store output in its own visit subfolder
+        path = os.path.join(path, visit)
     os.makedirs(path, exist_ok=True)   # create it if it doesn't exist yet
     return path
 
