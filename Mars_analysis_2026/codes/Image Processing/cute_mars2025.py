@@ -358,7 +358,7 @@ class CuteObservation:
 
 
     def plot_spectrum(self, box_pts=5, title=None, xlim=(2490, 3250),
-                    ylim=(0.0, 2.0), ax=None):
+                    ylim=(0.0, 2.0), ax=None, color='maroon'):
         if title is None:
             visit_str = f"{self.visit}" if self.visit else ""
             title = f"Mars NUV Spectra with CUTE - {visit_str} frmid {self.frame_id}"
@@ -367,7 +367,7 @@ class CuteObservation:
         fig, ax = plt.subplots(figsize=(10, 4)) if own else (ax.figure, ax)
 
         ax.plot(self.reference.wv_soln, smooth(self.flux, box_pts),
-                color="maroon", lw=1.5)
+                color=color, lw=1.5)
         ax.set_title(title)
         ax.set_xlabel(r"Wavelength ($\AA$)")
         ax.set_ylabel(
@@ -466,3 +466,123 @@ class CuteObservation:
                 f"kind must be 'spectrum', 'trace', or 'both', not {kind!r}")
 
         return FuncAnimation(fig, draw, frames=n, interval=1000 / fps)
+
+    # --------- crazy plots ---------
+    @classmethod
+    def animate_grid(
+        cls, visits, reference=None, fps=5, box_pts=5, 
+        xlim=(2490, 3250), ylim=None, ncols=4, 
+        suptitle="2025 Mars NUV Spectra with CUTE",
+        save=False, output_dir=None, pattern='*fits'
+    ):
+        """
+        Grid movie of all visits 1D spectra.
+        One subplot per visit
+        """
+
+        if reference is None:
+                    reference=CuteReference()
+        
+        # Assigning each visit an individual color
+        cmap = plt.colormaps.get_cmap('tab10')
+        visit_colors = {v: cmap(i % 10) for i, v in enumerate(visits)}
+
+        # gather + sort each visit's frames
+        visit_files = {}
+        for v in visits:
+            folder = os.path.join(_get_observations_dir(), v)
+            files = sorted(glob.glob(os.path.join(folder, pattern)), key=cls._frmid_of)
+            if not files:
+                raise FileNotFoundError(f'No {pattern!r} files found in {folder}')
+            visit_files[v] = files
+        n_anim = max(len(f) for f in visit_files.values())   # longest visit sets length
+
+        nrows = int(np.ceil(len(visits) / ncols))
+        fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 3 * nrows),
+                                 squeeze=False, constrained_layout=True)
+        axes_flat = axes.ravel()
+        for ax in axes_flat[len(visits):]:      # hide any leftover empty cells
+            ax.axis('off')
+        fig.suptitle(suptitle, fontsize=16)
+
+        # one shared y-range across all panels (comparable + no flicker)
+        if ylim is None:
+            peaks = [float(np.nanmax(cls(f[0], reference, visit=v).flux))
+                    for v, f in visit_files.items()]
+            ylim = (0.0, 1.15 * max(peaks))
+
+        def draw(i):
+            for ax, (v, files) in zip(axes_flat, visit_files.items()):
+                ax.clear()
+                idx = min(i, len(files) - 1)     # hold last frame for shorter visits
+                obs = cls(files[idx], reference, visit=v)
+                obs.plot_spectrum(ax=ax, box_pts=box_pts, xlim=xlim, ylim=ylim,
+                                  color=visit_colors[v],
+                                  title=f"{v} frmid {obs.frame_id}")
+
+        anim = FuncAnimation(fig, draw, frames=n_anim, interval=1000 / fps)
+        if save:
+            if output_dir is None:
+                raise ValueError("save=True needs an output_dir")
+            path = os.path.join(output_dir, "grid_spectra.gif")
+            anim.save(path, writer=PillowWriter(fps=fps))
+            print(f"Saved {path}")
+        plt.show()
+        return anim
+
+    @classmethod
+    def animate_sequence(cls, visits, reference=None, fps=5, box_pts=5,
+                        xlim=(2490, 3250), ylim=None,
+                        suptitle="2025 Mars NUV Spectra with CUTE",
+                        save=False, output_dir=None, pattern='*.fits'):
+        '''
+        One 1D-spectrum panel that plays through EVERY frame of each visit in
+        turn: all of visits[0], then all of visits[1], ... Frame title is
+        "Visit# frmid ####"; the figure carries `suptitle`.
+        save=False -> display; save=True -> write sequence_spectra.gif.
+        '''
+        if reference is None:
+            reference = CuteReference()
+
+        # Assigning each visit an individual color
+        cmap = plt.colormaps.get_cmap('tab10')
+        visit_colors = {v: cmap(i % 10) for i, v in enumerate(visits)}
+
+        # flat, ordered list of (visit, filepath): visit order, frmid within visit
+        seq = []
+        for v in visits:
+            folder = os.path.join(_get_observations_dir(), v)
+            files = sorted(glob.glob(os.path.join(folder, pattern)), key=cls._frmid_of)
+            if not files:
+                raise FileNotFoundError(f'No {pattern!r} files found in {folder}')
+            seq.extend((v, f) for f in files)
+
+        # one shared y-range (sample the first frame of each visit) -> no flicker
+        if ylim is None:
+            peaks, seen = [], set()
+            for v, f in seq:
+                if v not in seen:
+                    seen.add(v)
+                    peaks.append(float(np.nanmax(cls(f, reference, visit=v).flux)))
+            ylim = (0.0, 1.15 * max(peaks))
+
+        fig, ax = plt.subplots(figsize=(10, 4))
+        fig.suptitle(suptitle, fontsize=14)
+
+        def draw(i):
+            ax.clear()
+            v, f = seq[i]
+            obs = cls(f, reference, visit=v)
+            obs.plot_spectrum(ax=ax, box_pts=box_pts, xlim=xlim, ylim=ylim,
+                            color=visit_colors[v],
+                            title=f"{v} frmid {obs.frame_id}")
+
+        anim = FuncAnimation(fig, draw, frames=len(seq), interval=1000 / fps)
+        if save:
+            if output_dir is None:
+                raise ValueError("save=True needs an output_dir")
+            path = os.path.join(output_dir, "sequence_spectra.gif")
+            anim.save(path, writer=PillowWriter(fps=fps))
+            print(f"Saved {path}  ({len(seq)} frames)")
+        plt.show()
+        return anim

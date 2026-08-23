@@ -11,53 +11,49 @@ import os
 import matplotlib.pyplot as plt
 from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get_output_dir
 
-#==============================================
+# ==============================================
 # USER INPUTS
-# Two options for output controlled by STATIC boolean:
-#   STATIC = True  : One trace region spectra and 1D spectrum 
-#                    will be plotted. Requires FILENAME input.
-#   STATIC = False : Movie of trace region and 1D spectrum displayed
-#                    that goes in order of frameid of all fits files
-#                    in a visit folder.
+#
+# MODE selects what to produce (pick one):
+#   'static'   : one frame trace plot + 1D spectrum. Needs FILENAME
+#   'visit'    : movie of one visit (trace + spectrum), all frames in frmid order.
+#   'grid'     : grid movie, one 1D-spectrum panel per visit in GRID_VISITS.
+#   'sequence' : one 1D-spectrum panel that plays every frame of each visit
+#                in turn, Visit1 -> ... -> Visit9.
 
-# Two options for SAVE boolean:
-#   SAVE = True  : saves the files to the 'output' folder
-#                  already present in the base directory,
-#                  then displays.
-#   SAVE = False : only displays the output.
+MODE = "sequence"
 
-STATIC = False
-
-SAVE = True
-output_dir = 'output'
-
-VISIT = "Visit6"
+VISIT = "Visit2"    # used by 'static' and 'visit'
 # e.g "Visit2" or "Visit3" or ...
 
-# if STATIC = True:
-#   Input file name str OR specific frame id as an int
-FILENAME = None
+# used by 'static':
+#   input file name str OR specific frame id as an int
+FILENAME = 4874
 # e.g 4874 or 'cute_TRIM2D_scan_..._frmid_4874_..._midrows_55.fits' 
 
-# WORK ORDER: files can have same frameid but differed midrows.
-# WORK ORDER: tracking needs to be able to adjust width and height (currently only height)
+# used by 'grid' and 'sequence' (Visit6 skipped: planet not in slit)
+GRID_VISITS = ['Visit1', 'Visit2', 'Visit3', 'Visit4',
+               'Visit5', 'Visit7', 'Visit8', 'Visit9']
 
-#==============================================
+SAVE = True    # save figures/GIFs to the output folder
+output_dir = 'output'
+
+# WORK ORDER: files can have same frameid but differed midrows.
+# ==============================================
 
 def main():
     ref = CuteReference()
-    out_path = _get_output_dir(output_dir, VISIT)
 
-    if STATIC:
+    if MODE == "static":
         if FILENAME is None:
-            raise ValueError("STATIC mode needs a FILENAME (or set STATIC = False to animate)")
+            raise ValueError("MODE 'static' needs a FILENAME")
+        out_path = _get_output_dir(output_dir, VISIT)     # output/<VISIT>/
         obs = load_observation(visit=VISIT, filename=FILENAME, reference=ref)
 
         fig1, ax1 = obs.plot_trace()
         fig2, ax2 = obs.plot_spectrum(box_pts=5, ylim=None)
 
         if SAVE:
-            # Files are named based on FITS file
             stem = os.path.splitext(os.path.basename(obs.fits_fname))[0]
             trace_png = os.path.join(out_path, f"{stem}_trace.png")
             spec_png  = os.path.join(out_path, f"{stem}_spectrum.png")
@@ -66,12 +62,33 @@ def main():
             print(f"Saved:\n  {trace_png}\n  {spec_png}")
 
         plt.show()
-        
-    else:
+
+    elif MODE == "visit":
+        out_path = _get_output_dir(output_dir, VISIT)     # output/<VISIT>/
         CuteObservation.animate_visit(
             visit=VISIT, reference=ref, kind='both', fps=5,
             save=SAVE, output_dir=out_path
         )
+
+    elif MODE == "grid":
+        out_path = _get_output_dir(output_dir)            # output/
+        CuteObservation.animate_grid(
+            GRID_VISITS, reference=ref, fps=5,
+            save=SAVE, output_dir=out_path
+        )
+
+    elif MODE == "sequence":
+        out_path = _get_output_dir(output_dir)            # output/
+        CuteObservation.animate_sequence(
+            GRID_VISITS, reference=ref, fps=5,
+            save=SAVE, output_dir=out_path
+        )
+
+    else:
+        raise ValueError(
+            f"MODE must be 'static', 'visit', 'grid', or 'sequence', not {MODE!r}"
+        )
+
 
 if __name__ == '__main__':
     main()
