@@ -2,7 +2,7 @@
 
 Github: https://github.com/JoshSend/CUTE_Solar_System_Observations
 
-Planets observed:
+#### Planets observed:
   * Mars
   * Jupiter
   * Uranus
