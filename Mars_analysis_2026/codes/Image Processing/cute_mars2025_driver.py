@@ -21,7 +21,7 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'sequence' : one 1D-spectrum panel that plays every frame of each visit
 #                in turn, Visit1 -> ... -> Visit9.
 
-MODE = "sequence"
+MODE = "grid"
 
 # used by 'static' and 'visit':
 #   input visit folder name str
@@ -44,7 +44,8 @@ SKIP_FRMID = [4929]
 # List of frames where Mars is not in slit:
 #       4929, 
 
-SAVE = True    # save figures/GIFs to the output folder
+# save figures/GIFs to the output folder
+SAVE = False
 output_dir = 'output'
 
 # WORK ORDER: 'static' mode opening animated grid (RESOLVED in isolated use case, TESTING NEEDED)
