@@ -397,7 +397,7 @@ class CuteObservation:
     def animate_visit(cls, visit, reference=None, kind='both', fps=5,
                     box_pts=5, xlim=(2490, 3250), ylim=None,
                     vmin=None, vmax=None, pattern='*.fits',
-                    save=False, output_dir=None):
+                    save=False, output_dir=None, skip_frmid=None):
         '''
         Animate every FITS frame in a visit folder, in frame-id order, and DISPLAY
         it (nothing is saved). Two separate windows by default:
@@ -409,11 +409,15 @@ class CuteObservation:
         '''
         if reference is None:
             reference = CuteReference()
+        skip = {int(s) for s in (skip_frmid or [])}       # frame ids to drop
 
         folder = os.path.join(_get_observations_dir(), visit)
         files = sorted(glob.glob(os.path.join(folder, pattern)), key=cls._frmid_of)
         if not files:
-            raise FileNotFoundError(f'No {pattern!r} files found in {folder}')
+            raise FileNotFoundError(f'No {pattern!r} files in {folder}')
+        files = [f for f in files if cls._frmid_of(f) not in skip]   # drop skipped
+        if not files:
+            raise ValueError(f"No frames left in {visit} after applying skip_frmid")
         if save and output_dir is None:
             raise ValueError("save=True needs an output_dir")
 
@@ -473,7 +477,8 @@ class CuteObservation:
         cls, visits, reference=None, fps=5, box_pts=5, 
         xlim=(2490, 3250), ylim=None, ncols=4, 
         suptitle="2025 Mars NUV Spectra with CUTE",
-        save=False, output_dir=None, pattern='*fits'
+        save=False, output_dir=None, pattern='*fits',
+        skip_frmid=None,
     ):
         """
         Grid movie of all visits 1D spectra.
@@ -481,27 +486,34 @@ class CuteObservation:
         """
 
         if reference is None:
-                    reference=CuteReference()
-        
+            reference = CuteReference()
+        skip = {int(s) for s in (skip_frmid or [])}   # frame ids to drop
+
         # Assigning each visit an individual color
         cmap = plt.colormaps.get_cmap('tab10')
         visit_colors = {v: cmap(i % 10) for i, v in enumerate(visits)}
 
-        # gather + sort each visit's frames
         visit_files = {}
         for v in visits:
             folder = os.path.join(_get_observations_dir(), v)
             files = sorted(glob.glob(os.path.join(folder, pattern)), key=cls._frmid_of)
             if not files:
                 raise FileNotFoundError(f'No {pattern!r} files found in {folder}')
+            files = [f for f in files if cls._frmid_of(f) not in skip]   # drop skipped
+            if not files:
+                print(f"  {v}: all frames skipped, leaving it out of the grid")
+                continue
             visit_files[v] = files
-        n_anim = max(len(f) for f in visit_files.values())   # longest visit sets length
+        if not visit_files:
+            raise ValueError("No frames left after applying skip_frmid")
+        n_anim = max(len(f) for f in visit_files.values())
 
-        nrows = int(np.ceil(len(visits) / ncols))
+        n_panels = len(visit_files)                   # use the FILTERED count
+        nrows = int(np.ceil(n_panels / ncols))
         fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 3 * nrows),
                                  squeeze=False, constrained_layout=True)
         axes_flat = axes.ravel()
-        for ax in axes_flat[len(visits):]:      # hide any leftover empty cells
+        for ax in axes_flat[n_panels:]:               # hide leftover cells
             ax.axis('off')
         fig.suptitle(suptitle, fontsize=16)
 
@@ -534,7 +546,8 @@ class CuteObservation:
     def animate_sequence(cls, visits, reference=None, fps=5, box_pts=5,
                         xlim=(2490, 3250), ylim=None,
                         suptitle="2025 Mars NUV Spectra with CUTE",
-                        save=False, output_dir=None, pattern='*.fits'):
+                        save=False, output_dir=None, pattern='*.fits',
+                        skip_frmid=None):
         '''
         One 1D-spectrum panel that plays through EVERY frame of each visit in
         turn: all of visits[0], then all of visits[1], ... Frame title is
@@ -543,19 +556,24 @@ class CuteObservation:
         '''
         if reference is None:
             reference = CuteReference()
+        skip = {int(s) for s in (skip_frmid or [])}   # frame ids to drop
 
         # Assigning each visit an individual color
         cmap = plt.colormaps.get_cmap('tab10')
         visit_colors = {v: cmap(i % 10) for i, v in enumerate(visits)}
 
-        # flat, ordered list of (visit, filepath): visit order, frmid within visit
         seq = []
         for v in visits:
             folder = os.path.join(_get_observations_dir(), v)
             files = sorted(glob.glob(os.path.join(folder, pattern)), key=cls._frmid_of)
             if not files:
                 raise FileNotFoundError(f'No {pattern!r} files found in {folder}')
-            seq.extend((v, f) for f in files)
+            seq.extend((v, f) for f in files if cls._frmid_of(f) not in skip)
+        if not seq:
+            raise ValueError("No frames left after applying skip_frmid")
+
+
+        
 
         # one shared y-range (sample the first frame of each visit) -> no flicker
         if ylim is None:

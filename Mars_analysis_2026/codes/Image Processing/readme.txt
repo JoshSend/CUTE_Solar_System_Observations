@@ -1,4 +1,5 @@
 Data Processing files for NASA CUTE (Colorado Ultraviolet Transit Experiment)
+Github: https://github.com/JoshSend/CUTE_Solar_System_Observations
 Author(s) = { 
     Dolon Bhattacharyya : dobh6980,
     Joshua Sendgikoski  : jose5987
@@ -21,10 +22,13 @@ Image Processing logic separated into two classes in cute_mars2025:
 
 -----------------------------------
 To utilize:
-    Navigate to cute_mars2025_driver.py
+    Navitage to cute_mars2025_driver.py 
     User Inputs:
-        STATIC     : bool        # Plot single trace region and 1D spectrum or animate over entire visit 
-        SAVE       : bool        # Options for saving outputted .png or .gif
-        output_dir : str         # File name for saved output (typically won't need to change)
-        VISIT      : str         # Name of visit folder
-        FILENAME   : str or int  # Either .fits file name or individual frameid
+        MODE         : str          # 'static', 'visit', 'grid', 'sequence'
+        VISIT        : str          # Name of visit folder
+        FILENAME     : str or int   # File name OR specific frame id
+        GRID_VISITS  : list[str]    # Visit folders to skip in animations
+        SKIP_FRMID   : list[int]    # FrameIDs to skip in animations
+        SAVE         : bool         # Options for saving output to output_dir
+        output_dir   : str          # Directory for output
+                                    (shouldn't need to change if entire folder is ported. i.e. from Github)

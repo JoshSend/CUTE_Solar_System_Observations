@@ -21,9 +21,10 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'sequence' : one 1D-spectrum panel that plays every frame of each visit
 #                in turn, Visit1 -> ... -> Visit9.
 
-MODE = "sequence"
+MODE = "grid"
 
-VISIT = "Visit2"    # used by 'static' and 'visit'
+# used by 'static' and 'visit'
+VISIT = "Visit2"
 # e.g "Visit2" or "Visit3" or ...
 
 # used by 'static':
@@ -35,10 +36,16 @@ FILENAME = 4874
 GRID_VISITS = ['Visit1', 'Visit2', 'Visit3', 'Visit4',
                'Visit5', 'Visit7', 'Visit8', 'Visit9']
 
-SAVE = True    # save figures/GIFs to the output folder
+# used by 'visit', 'grid', and 'sequence':
+#   skips specified frameids in integer list input
+SKIP_FRMID = [4864]
+# e.g [4861, 4874, ...]
+
+SAVE = False    # save figures/GIFs to the output folder
 output_dir = 'output'
 
 # WORK ORDER: files can have same frameid but differed midrows.
+# WORK ORDER: add option to exclude certain frameid from grid/sequence movies.
 # ==============================================
 
 def main():
@@ -64,24 +71,26 @@ def main():
         plt.show()
 
     elif MODE == "visit":
-        out_path = _get_output_dir(output_dir, VISIT)     # output/<VISIT>/
+        out_path = _get_output_dir(output_dir, VISIT)
         CuteObservation.animate_visit(
             visit=VISIT, reference=ref, kind='both', fps=5,
-            save=SAVE, output_dir=out_path
+            save=SAVE, output_dir=out_path, skip_frmid=SKIP_FRMID
         )
 
     elif MODE == "grid":
-        out_path = _get_output_dir(output_dir)            # output/
+        out_path = _get_output_dir(output_dir)
         CuteObservation.animate_grid(
             GRID_VISITS, reference=ref, fps=5,
-            save=SAVE, output_dir=out_path
+            save=SAVE, output_dir=out_path,
+            skip_frmid=SKIP_FRMID
         )
 
     elif MODE == "sequence":
-        out_path = _get_output_dir(output_dir)            # output/
+        out_path = _get_output_dir(output_dir)
         CuteObservation.animate_sequence(
             GRID_VISITS, reference=ref, fps=5,
-            save=SAVE, output_dir=out_path
+            save=SAVE, output_dir=out_path,
+            skip_frmid=SKIP_FRMID
         )
 
     else:
