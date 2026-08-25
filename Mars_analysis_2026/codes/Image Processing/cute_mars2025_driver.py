@@ -21,15 +21,16 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'sequence' : one 1D-spectrum panel that plays every frame of each visit
 #                in turn, Visit1 -> ... -> Visit9.
 
-MODE = "grid"
+MODE = "sequence"
 
-# used by 'static' and 'visit'
-VISIT = "Visit2"
+# used by 'static' and 'visit':
+#   input visit folder name str
+VISIT = "Visit9"
 # e.g "Visit2" or "Visit3" or ...
 
 # used by 'static':
 #   input file name str OR specific frame id as an int
-FILENAME = 4874
+FILENAME = 4872
 # e.g 4874 or 'cute_TRIM2D_scan_..._frmid_4874_..._midrows_55.fits' 
 
 # used by 'grid' and 'sequence' (Visit6 skipped: planet not in slit)
@@ -38,14 +39,16 @@ GRID_VISITS = ['Visit1', 'Visit2', 'Visit3', 'Visit4',
 
 # used by 'visit', 'grid', and 'sequence':
 #   skips specified frameids in integer list input
-SKIP_FRMID = [4864]
+SKIP_FRMID = [4929]
 # e.g [4861, 4874, ...]
+# List of frames where Mars is not in slit:
+#       4929, 
 
-SAVE = False    # save figures/GIFs to the output folder
+SAVE = True    # save figures/GIFs to the output folder
 output_dir = 'output'
 
-# WORK ORDER: files can have same frameid but differed midrows.
-# WORK ORDER: add option to exclude certain frameid from grid/sequence movies.
+# WORK ORDER: 'static' mode opening animated grid (RESOLVED in isolated use case, TESTING NEEDED)
+# WORK ORDER: implement and adjust effective area multiplication factor (from 2024 to 2025)
 # ==============================================
 
 def main():
