@@ -8,6 +8,4 @@ Planets observed:
   * Uranus
   * Venus
 
-Author(s):
-    1. Dolon Bhattacharyya : dobh6980,
-    2. Joshua Sendgikoski  : jose5987
+Author(s): Dolon Bhattacharyya (dobh6980), Joshua Sendgikoski (jose5987)
