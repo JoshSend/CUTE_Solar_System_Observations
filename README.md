@@ -1,5 +1,5 @@
 Repository for NASA CUTE (Colorado Ultraviolet Transit Experiment)
-solar system observations from extended mission timeline.
+solar system observations from extended mission timeline.\\
 Github: https://github.com/JoshSend/CUTE_Solar_System_Observations
 
 Planets observed:
