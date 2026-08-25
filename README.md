@@ -2,8 +2,8 @@
 
 Github: https://github.com/JoshSend/CUTE_Solar_System_Observations
 
-#### Planets observed:
-  * Mars
+**Planets observed:**
+  * Mars -> Mars_analysis_2026
   * Jupiter
   * Uranus
   * Venus
