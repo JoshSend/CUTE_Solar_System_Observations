@@ -377,7 +377,7 @@ class CuteObservation:
         return fig, ax
 
 
-    def plot_spectrum(self, box_pts=5, title=None, xlim=(2490, 3250),
+    def plot_spectrum(self, box_pts=15, title=None, xlim=(2490, 3250),
                     ylim=(0.0, 2.0), ax=None, color='maroon'):
         if title is None:
             visit_str = f"{self.visit}" if self.visit else ""
@@ -415,7 +415,7 @@ class CuteObservation:
 
     @classmethod
     def animate_visit(cls, visit, reference=None, kind='both', fps=5,
-                    box_pts=5, xlim=(2490, 3250), ylim=None,
+                    box_pts=15, xlim=(2490, 3250), ylim=None,
                     vmin=None, vmax=None, pattern='*.fits',
                     save=False, output_dir=None, skip_frmid=None):
         '''
@@ -470,7 +470,7 @@ class CuteObservation:
             def draw(i):
                 ax.clear()
                 cls(files[i], reference, visit=visit).plot_spectrum(
-                    ax=ax, box_pts=box_pts, xlim=xlim, ylim=ylim)
+                    ax=ax, box_pts=15, xlim=xlim, ylim=ylim)
 
         elif kind == 'trace':
             fig, ax = plt.subplots()
@@ -494,7 +494,7 @@ class CuteObservation:
     # --------- crazy plots ---------
     @classmethod
     def animate_grid(
-        cls, visits, reference=None, fps=5, box_pts=5, 
+        cls, visits, reference=None, fps=5, box_pts=15, 
         xlim=(2490, 3250), ylim=None, ncols=4, 
         suptitle="2025 Mars NUV Spectra with CUTE",
         save=False, output_dir=None, pattern='*fits',
@@ -548,7 +548,7 @@ class CuteObservation:
                 ax.clear()
                 idx = min(i, len(files) - 1)     # hold last frame for shorter visits
                 obs = cls(files[idx], reference, visit=v)
-                obs.plot_spectrum(ax=ax, box_pts=box_pts, xlim=xlim, ylim=ylim,
+                obs.plot_spectrum(ax=ax, box_pts=15, xlim=xlim, ylim=ylim,
                                   color=visit_colors[v],
                                   title=f"{v} frmid {obs.frame_id}")
 
@@ -563,7 +563,7 @@ class CuteObservation:
         return anim
 
     @classmethod
-    def animate_sequence(cls, visits, reference=None, fps=5, box_pts=5,
+    def animate_sequence(cls, visits, reference=None, fps=5, box_pts=15,
                         xlim=(2490, 3250), ylim=None,
                         suptitle="2025 Mars NUV Spectra with CUTE",
                         save=False, output_dir=None, pattern='*.fits',

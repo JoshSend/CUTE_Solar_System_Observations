@@ -48,7 +48,7 @@ SKIP_FRMID = [4929]
 box_pts = 15
 
 # save figures/GIFs to the output folder
-SAVE = True
+SAVE = False
 output_dir = 'output'
 
 # ==============================================
@@ -62,7 +62,7 @@ def main():
         out_path = _get_output_dir(output_dir, VISIT)     # output/<VISIT>/
         obs = load_observation(visit=VISIT, filename=FILENAME, reference=ref)
 
-        fig1, ax1 = obs.plot_trace(vmin=0, vmax=18000)
+        fig1, ax1 = obs.plot_trace(vmin=0, vmax=6000, box_pts=box_pts)
         fig2, ax2 = obs.plot_spectrum(box_pts=box_pts,
                                       ylim=None)
 
@@ -80,7 +80,8 @@ def main():
         out_path = _get_output_dir(output_dir, VISIT)
         CuteObservation.animate_visit(
             visit=VISIT, reference=ref, kind='both', fps=5,
-            save=SAVE, output_dir=out_path, skip_frmid=SKIP_FRMID
+            save=SAVE, output_dir=out_path, skip_frmid=SKIP_FRMID,
+            box_pts=box_pts
         )
 
     elif MODE == "grid":
