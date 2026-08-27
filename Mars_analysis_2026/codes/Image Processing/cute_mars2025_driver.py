@@ -51,7 +51,6 @@ box_pts = 15
 SAVE = True
 output_dir = 'output'
 
-# WORK ORDER: implement and adjust effective area multiplication factor (from 2024 to 2025)
 # ==============================================
 
 def main():
