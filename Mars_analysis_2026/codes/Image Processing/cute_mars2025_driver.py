@@ -21,7 +21,7 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'sequence' : one 1D-spectrum panel that plays every frame of each visit
 #                in turn, Visit1 -> ... -> Visit9.
 
-MODE = "static"
+MODE = "visit"
 
 # used by 'static' and 'visit':
 #   input visit folder name str
@@ -44,8 +44,11 @@ SKIP_FRMID = [4929]
 # List of frames where Mars is not in slit:
 #       4929, 
 
+# Optional Boxcar smoothing for 1D spectra
+box_pts = 15
+
 # save figures/GIFs to the output folder
-SAVE = False
+SAVE = True
 output_dir = 'output'
 
 # WORK ORDER: implement and adjust effective area multiplication factor (from 2024 to 2025)
@@ -60,8 +63,9 @@ def main():
         out_path = _get_output_dir(output_dir, VISIT)     # output/<VISIT>/
         obs = load_observation(visit=VISIT, filename=FILENAME, reference=ref)
 
-        fig1, ax1 = obs.plot_trace()
-        fig2, ax2 = obs.plot_spectrum(box_pts=5, ylim=None)
+        fig1, ax1 = obs.plot_trace(vmin=0, vmax=18000)
+        fig2, ax2 = obs.plot_spectrum(box_pts=box_pts,
+                                      ylim=None)
 
         if SAVE:
             stem = os.path.splitext(os.path.basename(obs.fits_fname))[0]

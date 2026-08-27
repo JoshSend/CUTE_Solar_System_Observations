@@ -13,12 +13,15 @@ import os                            # file handling
 import glob                          # glob
 import numpy as np                   # computation
 from astropy.io import fits          # fit handling
-
 import matplotlib.pyplot as plt      # plotting
+
 # Animation 
 from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
+
+# Turn off matplotlib's auto interpolation for all images
+plt.rcParams['image.interpolation'] = 'none'
 
 # --------- Helper Functions ---------
 
@@ -168,10 +171,11 @@ class CuteObservation:
     H = 6.626075540e-27         # erg s
     C = 2.99792458e+10          # cm / s
     N_SCI_PIX = 2048            # science pixels (excludes overscan)
-    APERTURE = 1.5             # science half-height = APERATURE *(measured FWHM / 2)
+    APERTURE = 1.0              # science half-height = APERATURE *(measured FWHM / 2)
 
     def __init__(
-        self, fits_fname, reference: CuteReference, visit=None, base_dir=None, track=True
+        self, fits_fname, reference: CuteReference, visit=None, base_dir=None, 
+        track=True, widen=True,
     ):
         self.fits_fname = fits_fname
         self.reference = reference
@@ -181,17 +185,19 @@ class CuteObservation:
         self.frame_id = self._extract_frame_id()
 
         self.img, self.exptime = self._load_image()
-        self.nx = self.img.shape[1] # 2200 columns = 2048 science pixels + overscan on both ends
+        self.nx = self.img.shape[1]
 
         self.row_offset = 0.0
-        self._build_regions()
+        self.trace_fwhm = 0.0
+        self.sci_grow = 0.0
+        self._build_regions()                       # nominal fixed box
         if track:
             self.row_offset, self.trace_fwhm = self._measure_trace_shape()
-            i_mid = len(self.xval) // 2
-            h0 = 0.5 * (self.yval2_sc[i_mid] - self.yval1_sc[i_mid])   # nominal half-height
-            if self.trace_fwhm > 0:
+            if widen and self.trace_fwhm > 0:       # widening now OFF by default
+                i_mid = len(self.xval) // 2
+                h0 = 0.5 * (self.yval2_sc[i_mid] - self.yval1_sc[i_mid])
                 half_target = self.APERTURE * (self.trace_fwhm / 2.0)
-                self.sci_grow = max(half_target - h0, 1 - h0)          # never collapse below ~1px
+                self.sci_grow = max(half_target - h0, 1 - h0)
             self._build_regions(row_shift=self.row_offset, sci_grow=self.sci_grow)
 
         self.spectra = self.extract_spectrum()
@@ -292,32 +298,46 @@ class CuteObservation:
 
         return sc_arr
 
+    # def _compute_flux(self):
+    #     """
+    #     Converts DN spectrum to photon flux density
+    #     in units of 10^-9 erg/s/cm^2/A.
+    #     """
+    #     wave_sol = self.reference.wv_soln
+    #     eff_area = self.reference.eff_area
+
+    #     # Wavelength pixel dispersion bin size (Angstroms / pixel)
+    #     dwave = np.gradient(wave_sol)
+
+    #     # Count rate in electrons/s using header exposure time
+    #     mars_spec_e = self.spectra * (self.GAIN / self.exptime)
+
+    #     #  Wavelength in cm
+    #     wave_cm = wave_sol * 1.0e-8
+
+    #     # Raw CGS flux density (erg s^-1 cm^-2 A^-1)
+    #     flux_cgs = (mars_spec_e * self.H * self.C) / (
+    #         wave_cm * eff_area * dwave
+    #     )
+
+    #     # Scale to 10^-9 units to plot on 0.0 - 2.0 range
+    #     flux_1e9 = flux_cgs / 1.0e-9
+
+    #     return flux_1e9
+
     def _compute_flux(self):
         """
         Converts DN spectrum to photon flux density
-        in units of 10^-9 erg/s/cm^2/A.
+        in units of 10^-9 erg/s/cm^2/A
         """
         wave_sol = self.reference.wv_soln
         eff_area = self.reference.eff_area
 
-        # Wavelength pixel dispersion bin size (Angstroms / pixel)
-        dwave = np.gradient(wave_sol)
+        mars_spec_e = self.spectra * (self.GAIN / self.exptime)      # DN -> e-/s
+        wave_cm = wave_sol * 1.0e-8                                  # Angstrom -> cm
+        flux_cgs = (mars_spec_e * self.H * self.C) / (wave_cm * eff_area)
 
-        # Count rate in electrons/s using header exposure time
-        mars_spec_e = self.spectra * (self.GAIN / self.exptime)
-
-        #  Wavelength in cm
-        wave_cm = wave_sol * 1.0e-8
-
-        # Raw CGS flux density (erg s^-1 cm^-2 A^-1)
-        flux_cgs = (mars_spec_e * self.H * self.C) / (
-            wave_cm * eff_area * dwave
-        )
-
-        # Scale to 10^-9 units to plot on 0.0 - 2.0 range
-        flux_1e9 = flux_cgs / 1.0e-9
-
-        return flux_1e9
+        return flux_cgs / 1.0e-9   
 
     # --------- outputs ---------
     def _extract_frame_id(self):
