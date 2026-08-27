@@ -21,16 +21,16 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'sequence' : one 1D-spectrum panel that plays every frame of each visit
 #                in turn, Visit1 -> ... -> Visit9.
 
-MODE = "grid"
+MODE = "static"
 
 # used by 'static' and 'visit':
 #   input visit folder name str
-VISIT = "Visit9"
+VISIT = "Visit2"
 # e.g "Visit2" or "Visit3" or ...
 
 # used by 'static':
 #   input file name str OR specific frame id as an int
-FILENAME = 4872
+FILENAME = 4874
 # e.g 4874 or 'cute_TRIM2D_scan_..._frmid_4874_..._midrows_55.fits' 
 
 # used by 'grid' and 'sequence' (Visit6 skipped: planet not in slit)
@@ -48,7 +48,6 @@ SKIP_FRMID = [4929]
 SAVE = False
 output_dir = 'output'
 
-# WORK ORDER: 'static' mode opening animated grid (RESOLVED in isolated use case, TESTING NEEDED)
 # WORK ORDER: implement and adjust effective area multiplication factor (from 2024 to 2025)
 # ==============================================
 

@@ -206,7 +206,7 @@ class CuteObservation:
                     'EXPTIME', fits_file[0].header.get('EXPOSURE', 100000.0)
                 )
             )
-            exptime = exptime_ms / 1000.0
+            exptime = exptime_ms / 1000.0 # in seconds
         return img, exptime
 
     def _build_regions(self, row_shift=0.0, sci_grow=0.0):
