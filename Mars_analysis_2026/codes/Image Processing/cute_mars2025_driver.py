@@ -33,6 +33,12 @@ VISIT = "Visit6"
 FILENAME = 4874
 # e.g 4874 or 'cute_TRIM2D_scan_..._frmid_4874_..._midrows_55.fits' 
 
+# save figures/GIFs to the output folder
+SAVE = True
+output_dir = 'output'
+
+# -----------------------------
+
 # used by 'grid' and 'sequence' (Visit6 skipped: planet not in slit)
 GRID_VISITS = ['Visit1', 'Visit2', 'Visit3', 'Visit4',
                'Visit5', 'Visit7', 'Visit8', 'Visit9']
@@ -44,12 +50,8 @@ SKIP_FRMID = [4929]
 # List of frames where Mars is not in slit:
 #       4929, 
 
-# Optional Boxcar smoothing for 1D spectra
+# Boxcar smoothing for 1D spectra
 box_pts = 15
-
-# save figures/GIFs to the output folder
-SAVE = True
-output_dir = 'output'
 
 # ==============================================
 
