@@ -25,7 +25,7 @@ MODE = "visit"
 
 # used by 'static' and 'visit':
 #   input visit folder name str
-VISIT = "Visit2"
+VISIT = "Visit6"
 # e.g "Visit2" or "Visit3" or ...
 
 # used by 'static':
@@ -48,7 +48,7 @@ SKIP_FRMID = [4929]
 box_pts = 15
 
 # save figures/GIFs to the output folder
-SAVE = False
+SAVE = True
 output_dir = 'output'
 
 # ==============================================

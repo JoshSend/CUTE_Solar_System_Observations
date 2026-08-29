@@ -171,7 +171,7 @@ class CuteObservation:
     H = 6.626075540e-27         # erg s
     C = 2.99792458e+10          # cm / s
     N_SCI_PIX = 2048            # science pixels (excludes overscan)
-    APERTURE = 1.0              # science half-height = APERATURE *(measured FWHM / 2)
+    APERTURE = 1.4              # science half-height = APERATURE *(measured FWHM / 2)
 
     def __init__(
         self, fits_fname, reference: CuteReference, visit=None, base_dir=None, 
@@ -297,33 +297,6 @@ class CuteObservation:
                 sc_arr[i] = np.sum(self.img[yy3:yy4, col] - dk_arr[i])
 
         return sc_arr
-
-    # def _compute_flux(self):
-    #     """
-    #     Converts DN spectrum to photon flux density
-    #     in units of 10^-9 erg/s/cm^2/A.
-    #     """
-    #     wave_sol = self.reference.wv_soln
-    #     eff_area = self.reference.eff_area
-
-    #     # Wavelength pixel dispersion bin size (Angstroms / pixel)
-    #     dwave = np.gradient(wave_sol)
-
-    #     # Count rate in electrons/s using header exposure time
-    #     mars_spec_e = self.spectra * (self.GAIN / self.exptime)
-
-    #     #  Wavelength in cm
-    #     wave_cm = wave_sol * 1.0e-8
-
-    #     # Raw CGS flux density (erg s^-1 cm^-2 A^-1)
-    #     flux_cgs = (mars_spec_e * self.H * self.C) / (
-    #         wave_cm * eff_area * dwave
-    #     )
-
-    #     # Scale to 10^-9 units to plot on 0.0 - 2.0 range
-    #     flux_1e9 = flux_cgs / 1.0e-9
-
-    #     return flux_1e9
 
     def _compute_flux(self):
         """
