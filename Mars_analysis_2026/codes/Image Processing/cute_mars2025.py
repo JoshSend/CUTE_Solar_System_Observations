@@ -205,14 +205,26 @@ class CuteObservation:
 
     def _load_image(self):
         with fits.open(self.fits_fname) as fits_file:
+            hdr = fits_file[0].header
             img = np.fliplr(fits_file[0].data)
-            # CUTE's EXPTIME header is in MILLISECONDS -> convert to seconds
-            exptime_ms = float(
-                fits_file[0].header.get(
-                    'EXPTIME', fits_file[0].header.get('EXPOSURE', 100000.0)
-                )
-            )
-            exptime = exptime_ms / 1000.0 # in seconds
+
+            # Exposure time is per-frame in the header (MILLISECONDS). Prefer the
+            # measured EXPTIME, then EXPOSURE, then commanded EXPCMD -- no silent
+            # universal default, so a missing value is caught instead of guessed.
+            for key in ('EXPTIME', 'EXPOSURE', 'EXPCMD'):
+                if key in hdr:
+                    exptime_ms = float(hdr[key])
+                    break
+            else:
+                raise KeyError(
+                    f"no exposure keyword (EXPTIME/EXPOSURE/EXPCMD) in "
+                    f"{os.path.basename(self.fits_fname)}")
+            if exptime_ms <= 0:
+                raise ValueError(
+                    f"non-positive exposure {exptime_ms} ms in "
+                    f"{os.path.basename(self.fits_fname)}")
+
+            exptime = exptime_ms / 1000.0   # seconds
         return img, exptime
 
     def _build_regions(self, row_shift=0.0, sci_grow=0.0):
