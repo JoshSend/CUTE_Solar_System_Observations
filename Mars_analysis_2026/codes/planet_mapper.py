@@ -26,17 +26,6 @@ def zoom(ax, half):
     ax.set_aspect('equal')
     ax.axis('off')
 
-# def add_terminator(ax, body_obj):
-#     """Calculates the terminator coordinates and plots them in angular (arcsec) space."""
-#     # 1. Get the terminator's planetocentric longitude and latitude
-#     lons, lats = body_obj.terminator_lonlat(only_visible=True, npts=360)
-    
-#     # 2. Convert those surface coordinates into sky coordinates (RA/Dec offsets in arcseconds)
-#     ra_offsets, dec_offsets = body_obj.lonlat2radec_offset(lons, lats)
-    
-#     # 3. Plot the terminator line manually onto the provided axis
-#     ax.plot(ra_offsets, dec_offsets, color='red', linestyle='--', linewidth=1.5, label='Terminator')
-
 # --- Image 1: 5 x 5 Mars radii FOV -------------------------------------
 fig1, ax1 = plt.subplots(figsize=(6, 6))
 body.plot_wireframe_angular(
@@ -46,7 +35,6 @@ body.plot_wireframe_angular(
 
 zoom(ax1, 2.5 * mars_radius_arcsec)               # 5 R_Mars across
 ax1.set_title(f'')
-#add_terminator(ax1, body)
 
 # --- Image 2: 23 x 23 arcsec FOV ---------------------------------------
 fig2, ax2 = plt.subplots(figsize=(6, 6))
@@ -56,6 +44,5 @@ body.plot_wireframe_angular(
 )
 zoom(ax2, 23 / 2)                                 # 23 arcsec across
 ax2.set_title('')
-#add_terminator(ax2, body)
 
 plt.show()
