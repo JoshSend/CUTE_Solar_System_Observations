@@ -1,0 +1,2 @@
+visit,frmid,date_obs,ra,dec,roll,pa_slit,boresight_offset_arcsec,disk_fraction_in_slit,mars_dec,mars_px_arcsec,mars_py_arcsec,mars_ra,mars_radius_arcsec,offset_in_mars_radii,slit_band
+Visit1,3726,2024-12-22T03:49:26.000,127.467324,22.608892,-9.056058,9.056058,8.09474038354201,1.0,22.611108526623,-2.600066758765819,7.66579902729695,127.46691445624,6.77258380612333,1.1952218850689265,"science band (60"" across)"
