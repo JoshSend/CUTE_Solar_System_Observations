@@ -32,16 +32,16 @@ fits_dir = out_dir / 'Mars_Fits'
 # Output Directory
 output_dir = out_dir / 'Slit_Overlay'
 
-# # File format for named overlays
-# # overlay_Visit*_frmid_date_obs_ra_dec_roll.png
+# File format for named overlays
+# overlay_Visit*_frmid_date_obs_ra_dec_roll.png
 
 #-------JOSH has to modify this portion to read in an array instead of single numbers for one frame----
 
 df = pd.read_csv(csv_dir)     # Establish pandas dataframe as df
 
 ra  = df['ra (deg)']          # degrees --- This is the Right Ascension angle
-dec = df['dec (deg)']         # degrees --- This is the Declination angle
-theta = df['roll (deg)']      # degrees --- This is the Roll angle 
+dec = df['dec (deg)']        # degrees --- This is the Declination angle
+theta = df['roll (deg)']     # degrees --- This is the Roll angle 
 
 px0=[-60.0,60.0,60.0,30.0,30.0,15.0,15.0,-15.0,-15.0,-30.0,-30.0,-60.0,-60.0]
 py0=[-591.807,-591.807,-351.805,-351.805,351.805,351.805,680.817,680.817,351.805,
@@ -92,5 +92,5 @@ coord.append(coord[0]) #repeat the first point to create a 'closed loop'
 
 p = Polygon(coord, edgecolor = 'k', facecolor='none', transform=ax.get_transform('fk5'))
 #ax.add_patch(p)
-ax.show()
+plt.show()
 
