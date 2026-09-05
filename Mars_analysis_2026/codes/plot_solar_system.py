@@ -8,6 +8,7 @@ Dependencies: astropy, numpy. matplotlib, sunpy
 @author: jose5987
 """
 
+import os
 from pathlib import Path
 from astropy.coordinates import SkyCoord
 from sunpy.coordinates import get_body_heliographic_stonyhurst

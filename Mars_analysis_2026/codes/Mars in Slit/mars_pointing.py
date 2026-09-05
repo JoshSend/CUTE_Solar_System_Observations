@@ -95,7 +95,7 @@ REV_ROT_VEC = [0.999919, -0.000289, -0.012762]
 # XB1_TAI epoch, derived by matching DATE-OBS (not documented in the header).
 TAI_EPOCH = Time('2000-01-01T00:00:00', format='isot', scale='tai')
 
-OBS_ROOT = os.path.join(_HERE, '..', 'CUTE_observations')
+OBS_ROOT = os.path.join(_HERE, '..', '..', 'CUTE_observations')
 
 # A frame further than this from Mars is reported as off target.  Note this
 # is a slew-scale threshold, deliberately much looser than the slit.

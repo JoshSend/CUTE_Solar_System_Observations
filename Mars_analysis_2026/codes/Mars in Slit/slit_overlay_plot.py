@@ -10,7 +10,7 @@ Modified for CUTE Mars observations
 import os
 import csv
 import glob
- 
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
@@ -22,7 +22,7 @@ fits_path = r"C:\Users\mageb\OneDrive\Documents\CUTE_Solar_System_Observations\M
  
 # ============================ USER CONFIG ============================
 HERE       = os.path.dirname(os.path.abspath(__file__))
-CSV_PATH   = os.path.join(HERE, 'mars_pointing.csv')
+CSV_PATH   = os.path.join(HERE, '..', 'output', 'mars_pointing.csv')
 PDF_DIR    = os.path.join(HERE, 'mars_pdfs')      # holds <frmid>.pdf per frame
 OUT_DIR    = os.path.join(HERE, 'overlay_out')    # figures + WCS FITS go here
  
