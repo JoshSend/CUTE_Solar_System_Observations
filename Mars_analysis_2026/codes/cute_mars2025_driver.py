@@ -21,9 +21,8 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 # MODE selects what to produce (pick one):
 #   'static'     : one frame trace plot + 1D spectrum. Needs FILENAME
 #   'static_all' : trace + 1D spectrum PNG for EVERY frame of EVERY visit in
-#                  GRID_VISITS (Visit6 skipped). No manual FILENAME/VISIT.
 #   'overlay'    : every frame of VISIT drawn over each other on one axes,
-#                  colored first -> last, to compare how the spectra changed.
+#                  colored first -> last
 #   'overlay_all': one overlay panel per visit in GRID_VISITS, single figure.
 #   'visit'      : movie of one visit (trace + spectrum), all frames in frmid order.
 #   'visit_all'  : movie of all visits (trace + spectrum)
