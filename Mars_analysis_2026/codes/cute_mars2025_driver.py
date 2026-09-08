@@ -20,7 +20,7 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 # USER INPUTS
 #
 # MODE selects what to produce (pick one):
-#   'static'   : one frame trace plot + 1D spectrum. Needs FILENAME
+#   'static'   : one frame trace plot + 1D spectrum. Needs FILENAME.
 #   'visit'    : movie of one visit (trace + spectrum), all frames in frmid order.
 #   'grid'     : grid movie, one 1D-spectrum panel per visit in GRID_VISITS.
 #   'sequence' : one 1D-spectrum panel that plays every frame of each visit
@@ -32,11 +32,11 @@ SAVE = True
 
 # used by 'static' and 'visit':
 #   input visit folder name str
-VISIT = 'Visit7'  # e.g. "Visit2" or "Visit3" or ...
+VISIT = 'Visit2'  # e.g. "Visit2" or "Visit3" or ...
 
 # used by 'static':
 #   input file name str OR specific frame id as an int
-FILENAME = 5143
+FILENAME = 4874
 # e.g 4874 or 'cute_TRIM2D_scan_..._frmid_4874_..._midrows_55.fits' 
 
 # save figures/GIFs to the output folder
@@ -67,7 +67,7 @@ def main():
         out_path = _get_output_dir(output_dir, VISIT)     # output/<VISIT>/
         obs = load_observation(visit=VISIT, filename=FILENAME, reference=ref)
 
-        fig1, ax1 = obs.plot_trace(vmin=0, vmax=6000, box_pts=box_pts)
+        fig1, ax1 = obs.plot_trace(vmin=0, vmax=6000, box_pts=15)
         fig2, ax2 = obs.plot_spectrum(box_pts=box_pts,
                                       ylim=None)
 
