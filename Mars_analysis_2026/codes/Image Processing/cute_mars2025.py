@@ -15,7 +15,7 @@ import numpy as np                   # computation
 from astropy.io import fits          # fit handling
 import matplotlib.pyplot as plt      # plotting
 
-# Animation 
+# Animation
 from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
@@ -96,7 +96,37 @@ def smooth(y, box_pts):
     box = np.ones(box_pts) / box_pts
     y_smooth = np.convolve(y, box, mode="same")
     return y_smooth
-    
+
+# Hue order for per-frame overlays. Checked for colorblind separation against a
+# white page: worst adjacent pair dE 9.1 under protanopia, 19.6 normal vision.
+# Don't reorder or extend it -- past ~8 hues the added colors stop being
+# distinguishable, which is what makes a 15-line overlay unreadable.
+OVERLAY_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100',
+                  '#e87ba4', '#008300', '#4a3aa7', '#e34948']
+# A visit with more frames than hues reuses the hues with the next linestyle,
+# so 8 hues x 3 styles = 24 combinations, each frame still unique. Visits top
+# out at 15 frames, i.e. 8 solid + 7 dashed.
+OVERLAY_DASHES = ['-', '--', ':']
+
+def _visit_files(visit, pattern='*.fits', skip_frmid=None, required=True):
+    """
+    Every FITS file in a visit folder, in frame-id order, with `skip_frmid`
+    frames dropped. Shared by the batch-save and overlay helpers so they all
+    see exactly the same frame list as the animators.
+    """
+    skip = {int(s) for s in (skip_frmid or [])}
+    folder = os.path.join(_get_observations_dir(), visit)
+    files = sorted(glob.glob(os.path.join(folder, pattern)),
+                   key=CuteObservation._frmid_of)
+    if not files:
+        if required:
+            raise FileNotFoundError(f'No {pattern!r} files found in {folder}')
+        return []
+    files = [f for f in files if CuteObservation._frmid_of(f) not in skip]
+    if not files and required:
+        raise ValueError(f'No frames left in {visit} after applying skip_frmid')
+    return files
+
 # ------------------------------------
 
 class CuteReference:
@@ -113,7 +143,7 @@ class CuteReference:
     wv_soln_fname  = 'flight_quad_wavelength_solution_final.dat'
 
     def __init__(self, base_dir=None):
-        self.base_dir       = base_dir or _get_default_dir()  
+        self.base_dir       = base_dir or _get_default_dir()
         self.wv_soln  = self._get_wv_soln()
         self.eff_area = self._get_eff_area()
 
@@ -174,7 +204,7 @@ class CuteObservation:
     APERTURE = 1.4              # science half-height = APERATURE *(measured FWHM / 2)
 
     def __init__(
-        self, fits_fname, reference: CuteReference, visit=None, base_dir=None, 
+        self, fits_fname, reference: CuteReference, visit=None, base_dir=None,
         track=True, widen=True,
     ):
         self.fits_fname = fits_fname
@@ -322,7 +352,7 @@ class CuteObservation:
         wave_cm = wave_sol * 1.0e-8                                  # Angstrom -> cm
         flux_cgs = (mars_spec_e * self.H * self.C) / (wave_cm * eff_area)
 
-        return flux_cgs / 1.0e-9   
+        return flux_cgs / 1.0e-9
 
     # --------- outputs ---------
     def _extract_frame_id(self):
@@ -336,7 +366,7 @@ class CuteObservation:
         if "frmid" in parts:
             idx = parts.index('frmid')
             return parts[idx + 1]
-        
+
         return "Unknown"
 
     def plot_trace(self, title=None, vmin=None, vmax=None, ax=None):
@@ -398,11 +428,275 @@ class CuteObservation:
             return int(tok) if tok.isdigit() else tok
         return os.path.basename(path)
 
+    # --------- batch static saves ---------
+    @classmethod
+    def save_visit_frames(cls, visit, reference=None, output_dir=None,
+                          kind='both', box_pts=15, xlim=(2490, 3250),
+                          ylim=(0.0, 2.0), vmin=None, vmax=None,
+                          pattern='*.fits', skip_frmid=None, dpi=200,
+                          overwrite=True, verbose=True):
+        '''
+        Save a static PNG for EVERY frame in one visit -- no manual FILENAME.
+
+            kind='spectrum' : one 1D-spectrum PNG per frame
+            kind='trace'    : one 2D trace PNG per frame
+            kind='both'     : both (default)
+
+        Files land in `output_dir` as "<fits stem>_trace.png" /
+        "<fits stem>_spectrum.png", i.e. exactly the names MODE 'static'
+        already writes, so a batch run and a one-off run agree.
+
+        `vmin`/`vmax` default to None, which lets plot_trace stretch each
+        frame between its own 5th and 99th percentile. A hard ceiling well
+        below the trace (the old vmax=6000) saturates the whole science box
+        into flat yellow and hides the spectrum -- only set vmin/vmax by hand
+        when every frame really is on the same brightness scale.
+
+        `ylim` is fixed by default so every saved spectrum is on the same
+        scale and frames stay comparable; pass ylim=None to autoscale each.
+        `overwrite=False` skips frames whose PNGs already exist, which makes
+        a re-run cheap after adding new data.
+
+        Returns the list of paths written.
+        '''
+        if reference is None:
+            reference = CuteReference()
+        if output_dir is None:
+            raise ValueError("save_visit_frames needs an output_dir")
+        if kind == 'both':
+            kinds = ['trace', 'spectrum']
+        elif kind in ('trace', 'spectrum'):
+            kinds = [kind]
+        else:
+            raise ValueError(
+                f"kind must be 'spectrum', 'trace', or 'both', not {kind!r}")
+
+        files = _visit_files(visit, pattern=pattern, skip_frmid=skip_frmid)
+        os.makedirs(output_dir, exist_ok=True)
+
+        saved, skipped = [], 0
+        for f in files:
+            stem = os.path.splitext(os.path.basename(f))[0]
+            targets = {k: os.path.join(output_dir, f"{stem}_{k}.png")
+                       for k in kinds}
+
+            if not overwrite and all(os.path.exists(p) for p in targets.values()):
+                skipped += 1
+                continue
+
+            obs = cls(f, reference, visit=visit)
+            for k, path in targets.items():
+                if k == 'trace':
+                    fig, _ = obs.plot_trace(vmin=vmin, vmax=vmax)
+                else:
+                    fig, _ = obs.plot_spectrum(box_pts=box_pts,
+                                               xlim=xlim, ylim=ylim)
+                fig.savefig(path, dpi=dpi, bbox_inches='tight')
+                plt.close(fig)          # free the figure -- batches get big
+                saved.append(path)
+
+        if verbose:
+            msg = f"{visit}: saved {len(saved)} PNG(s) for {len(files)} frame(s)"
+            if skipped:
+                msg += f" ({skipped} frame(s) already on disk, left alone)"
+            print(f"  {msg} -> {output_dir}")
+        return saved
+
+    @classmethod
+    def save_all_frames(cls, visits, reference=None, output_root=None,
+                        **kwargs):
+        '''
+        Run save_visit_frames over a list of visits, one subfolder per visit
+        (<output_root>/<visit>/). Visits with no usable frames are reported
+        and stepped over rather than killing the whole batch.
+
+        Returns {visit: [paths]}.
+        '''
+        if reference is None:
+            reference = CuteReference()
+        if output_root is None:
+            raise ValueError("save_all_frames needs an output_root")
+
+        results = {}
+        for v in visits:
+            out_path = os.path.join(output_root, v)
+            try:
+                results[v] = cls.save_visit_frames(
+                    v, reference=reference, output_dir=out_path, **kwargs)
+            except (FileNotFoundError, ValueError) as err:
+                print(f"  {v}: skipped ({err})")
+                results[v] = []
+
+        total = sum(len(p) for p in results.values())
+        print(f"Done: {total} PNG(s) across {len(results)} visit(s) "
+              f"-> {output_root}")
+        return results
+
+    # --------- frame-to-frame comparison ---------
+    @classmethod
+    def plot_visit_overlay(cls, visit, reference=None, ax=None, box_pts=15,
+                           xlim=(2490, 3250), ylim=None, palette=None,
+                           dashes=None, lw=1.3, alpha=0.9, title=None,
+                           legend=True, legend_loc=None, legend_fontsize=8,
+                           legend_ncol=1, pattern='*.fits', skip_frmid=None,
+                           save=False, output_dir=None, dpi=200, show=False):
+        '''
+        Every frame of ONE visit drawn over each other on a single axes, so
+        the change in the spectrum across the visit is visible at a glance.
+
+        Each frame gets its own color from `palette` (default OVERLAY_COLORS,
+        8 hues picked to stay separable, including for colorblind readers) and
+        is named in a legend by frmid. A visit with more frames than hues
+        reuses the hues with the next linestyle from `dashes`, so at the 15
+        frames a visit tops out at you get 8 solid + 7 dashed -- every frame
+        still uniquely identifiable, which a continuous colormap could not do.
+
+        `ylim=None` autoscales to the frames inside `xlim`.
+        `legend_loc=None` parks the legend outside the axes on the right for a
+        standalone figure; pass e.g. 'upper left' to keep it inside (what the
+        grid does, where there is no room beside each panel).
+
+        Returns (fig, ax).
+        '''
+        if reference is None:
+            reference = CuteReference()
+        colors = list(palette) if palette else list(OVERLAY_COLORS)
+        styles = list(dashes) if dashes else list(OVERLAY_DASHES)
+
+        files = _visit_files(visit, pattern=pattern, skip_frmid=skip_frmid)
+        n = len(files)
+        if n > len(colors) * len(styles):
+            print(f"  {visit}: {n} frames exceeds "
+                  f"{len(colors) * len(styles)} color/linestyle combinations "
+                  f"-- some frames will look identical")
+
+        own = ax is None
+        fig, ax = plt.subplots(figsize=(11, 5)) if own else (ax.figure, ax)
+
+        wave = reference.wv_soln
+        in_band = ((wave >= xlim[0]) & (wave <= xlim[1])) if xlim \
+            else np.ones_like(wave, dtype=bool)
+
+        peak = 0.0
+        for i, f in enumerate(files):
+            obs = cls(f, reference, visit=visit)
+            y = smooth(obs.flux, box_pts)
+            ax.plot(wave, y,
+                    color=colors[i % len(colors)],
+                    linestyle=styles[(i // len(colors)) % len(styles)],
+                    lw=lw, alpha=alpha, label=str(obs.frame_id))
+            if np.any(in_band):
+                peak = max(peak, float(np.nanmax(y[in_band])))
+
+        ax.set_title(title if title is not None else
+                     f"Mars NUV Spectra with CUTE - {visit} overlap")
+        ax.set_xlabel(r"Wavelength ($\AA$)")
+        ax.set_ylabel(
+            r"Flux ($10^{-9}\ \mathrm{erg}\ \mathrm{s}^{-1}\ \mathrm{cm}^{-2}\ \mathrm{\AA}^{-1}$)"
+        )
+        if xlim:
+            ax.set_xlim(xlim)
+        ax.set_ylim(ylim if ylim else (0.0, 1.15 * peak if peak > 0 else 1.0))
+        ax.grid(True, linestyle="--", linewidth=0.7, alpha=0.7)
+
+        if legend and n:
+            if legend_loc is None:      # outside, in the old colorbar's slot
+                leg = ax.legend(title="frmid", loc='center left',
+                                bbox_to_anchor=(1.01, 0.5),
+                                fontsize=legend_fontsize, ncol=legend_ncol,
+                                frameon=False, handlelength=2.4,
+                                labelspacing=0.35)
+            else:
+                leg = ax.legend(title="frmid", loc=legend_loc,
+                                fontsize=legend_fontsize, ncol=legend_ncol,
+                                framealpha=0.85, handlelength=1.8,
+                                labelspacing=0.25, columnspacing=0.9)
+            leg.get_title().set_fontsize(legend_fontsize)
+
+        if own:
+            # leave room for the legend column instead of tight_layout, which
+            # doesn't account for artists parked outside the axes
+            fig.subplots_adjust(left=0.08, right=0.86, top=0.92, bottom=0.12)
+
+        if save:
+            if output_dir is None:
+                raise ValueError("save=True needs an output_dir")
+            os.makedirs(output_dir, exist_ok=True)
+            path = os.path.join(output_dir, f"{visit}_overlay.png")
+            fig.savefig(path, dpi=dpi, bbox_inches='tight')
+            print(f"Saved {path}  ({n} frames)")
+
+        if show:
+            plt.show()
+        return fig, ax
+
+    @classmethod
+    def plot_overlay_grid(cls, visits, reference=None, ncols=4, box_pts=15,
+                          xlim=(2490, 3250), ylim=None, palette=None,
+                          dashes=None, share_ylim=True,
+                          suptitle="2025 Mars NUV Spectra with CUTE - all frames per visit",
+                          pattern='*.fits', skip_frmid=None,
+                          save=False, output_dir=None, dpi=200):
+        '''
+        One overlay panel per visit in a single static figure -- the still
+        counterpart to animate_grid. Each panel carries its own compact frmid
+        legend (frame ids differ between visits); `share_ylim` puts every
+        panel on one flux scale so visits are comparable too.
+        '''
+        if reference is None:
+            reference = CuteReference()
+
+        usable = []
+        for v in visits:
+            files = _visit_files(v, pattern=pattern, skip_frmid=skip_frmid,
+                                 required=False)
+            if files:
+                usable.append(v)
+            else:
+                print(f"  {v}: no frames left, leaving it out of the grid")
+        if not usable:
+            raise ValueError("No frames left after applying skip_frmid")
+
+        nrows = int(np.ceil(len(usable) / ncols))
+        fig, axes = plt.subplots(nrows, ncols,
+                                 figsize=(5 * ncols, 3.5 * nrows),
+                                 squeeze=False, constrained_layout=True)
+        axes_flat = axes.ravel()
+        for ax in axes_flat[len(usable):]:
+            ax.axis('off')
+        fig.suptitle(suptitle, fontsize=16)
+
+        for ax, v in zip(axes_flat, usable):
+            cls.plot_visit_overlay(v, reference=reference, ax=ax,
+                                   box_pts=box_pts, xlim=xlim, ylim=ylim,
+                                   palette=palette, dashes=dashes, lw=1.0,
+                                   title=v, legend=True,
+                                   legend_loc='upper left',
+                                   legend_fontsize=5.5, legend_ncol=3,
+                                   pattern=pattern, skip_frmid=skip_frmid)
+
+        if share_ylim and ylim is None:
+            top = max(ax.get_ylim()[1] for ax in axes_flat[:len(usable)])
+            for ax in axes_flat[:len(usable)]:
+                ax.set_ylim(0.0, top)
+
+        if save:
+            if output_dir is None:
+                raise ValueError("save=True needs an output_dir")
+            os.makedirs(output_dir, exist_ok=True)
+            path = os.path.join(output_dir, "grid_overlay.png")
+            fig.savefig(path, dpi=dpi, bbox_inches='tight')
+            print(f"Saved {path}")
+        plt.show()
+        return fig, axes
+
+    # --------- animations ---------
     @classmethod
     def animate_visit(cls, visit, reference=None, kind='both', fps=5,
                     box_pts=15, xlim=(2490, 3250), ylim=None,
                     vmin=None, vmax=None, pattern='*.fits',
-                    save=False, output_dir=None, skip_frmid=None):
+                    save=False, output_dir=None, skip_frmid=None,
+                    show=True):
         '''
         Animate every FITS frame in a visit folder, in frame-id order, and DISPLAY
         it (nothing is saved). Two separate windows by default:
@@ -411,6 +705,8 @@ class CuteObservation:
             kind='both'     : both windows at once (default)
             save=False      : DISPLAY on screen only
             save=True       : write on GIF per kind into output_dir
+            show=False      : write the GIFs without opening a window, which is
+                              what animate_all_visits needs to run unattended
         '''
         if reference is None:
             reference = CuteReference()
@@ -438,8 +734,53 @@ class CuteObservation:
                 anim.save(gif_path, writer=PillowWriter(fps=fps))
                 print(f"Saved {gif_path}")
 
-        plt.show()          # always display, whether or not we saved
+        if show:
+            plt.show()      # display, whether or not we saved
         return anims
+
+    @classmethod
+    def animate_all_visits(cls, visits, reference=None, output_root=None,
+                           kind='both', fps=5, box_pts=15, **kwargs):
+        '''
+        Write the GIFs for EVERY visit -- the movie counterpart of
+        save_all_frames. Each visit's GIFs land in <output_root>/<visit>/, the
+        same place MODE 'visit' puts them, so a batch run and a one-off run
+        agree.
+
+        Nothing is displayed: each visit's figures are closed as soon as its
+        GIFs are written, so a long batch doesn't accumulate open windows.
+        A visit with no usable frames is reported and stepped over instead of
+        killing the run. This re-reduces every frame twice per kind, so expect
+        it to take about as long as running MODE 'visit' on each visit in turn.
+
+        Returns {visit: [gif paths]}.
+        '''
+        if reference is None:
+            reference = CuteReference()
+        if output_root is None:
+            raise ValueError("animate_all_visits needs an output_root")
+        kinds = ['spectrum', 'trace'] if kind == 'both' else [kind]
+
+        results = {}
+        for v in visits:
+            out_path = os.path.join(output_root, v)
+            os.makedirs(out_path, exist_ok=True)
+            try:
+                cls.animate_visit(visit=v, reference=reference, kind=kind,
+                                  fps=fps, box_pts=box_pts, save=True,
+                                  output_dir=out_path, show=False, **kwargs)
+                results[v] = [os.path.join(out_path, f"{v}_{k}.gif")
+                              for k in kinds]
+            except (FileNotFoundError, ValueError) as err:
+                print(f"  {v}: skipped ({err})")
+                results[v] = []
+            finally:
+                plt.close('all')    # a batch otherwise holds every figure open
+
+        total = sum(len(p) for p in results.values())
+        print(f"Done: {total} GIF(s) across {len(results)} visit(s) "
+              f"-> {output_root}")
+        return results
 
     @classmethod
     def _animate_one(cls, files, reference, visit, kind, fps,
@@ -479,8 +820,8 @@ class CuteObservation:
     # --------- crazy plots ---------
     @classmethod
     def animate_grid(
-        cls, visits, reference=None, fps=5, box_pts=15, 
-        xlim=(2490, 3250), ylim=None, ncols=4, 
+        cls, visits, reference=None, fps=5, box_pts=15,
+        xlim=(2490, 3250), ylim=None, ncols=4,
         suptitle="2025 Mars NUV Spectra with CUTE",
         save=False, output_dir=None, pattern='*fits',
         skip_frmid=None,
@@ -578,7 +919,7 @@ class CuteObservation:
             raise ValueError("No frames left after applying skip_frmid")
 
 
-        
+
 
         # one shared y-range (sample the first frame of each visit) -> no flicker
         if ylim is None:
