@@ -62,7 +62,7 @@ output_dir.mkdir(parents=True, exist_ok=True)
 #     'gif'   one animation per visit per FOV, no PNGs        <- fastest
 #     'png'   one PNG per frame, no animation
 #     'both'  both, at roughly double the runtime
-MODE = 'gif'
+MODE = 'both'
  
 SHOW = False         # pop up each figure.  Leave False for a batch run --
                      # plt.show() on ~200 figures will stall the session.
@@ -211,7 +211,7 @@ def plot_frame(entry, row, save=SAVE_PNG, show=SHOW, capture=MAKE_GIF):
  
     fig = plt.figure(figsize=(FIG_INCHES, FIG_INCHES))
     ax = fig.add_subplot(projection=wcs)
-    ax.imshow(data, origin='lower', cmap='inferno')   # origin matters
+    ax.imshow(data, origin='lower', cmap='hot_r')   # origin matters
     ax.set_xlabel('RA (deg)')
     ax.set_ylabel('Dec (deg)')
     ax.set_autoscale_on(False)

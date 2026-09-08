@@ -26,22 +26,21 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'sequence' : one 1D-spectrum panel that plays every frame of each visit
 #                in turn, Visit1 -> ... -> Visit9.
 
-MODE = "visit"
+MODE = "static"
 # save figures/GIFs to the output folder
-SAVE = False 
+SAVE = True 
 
 # used by 'static' and 'visit':
 #   input visit folder name str
-VISIT = "Visit6"  # e.g. "Visit2" or "Visit3" or ...
+VISIT = 'Visit7'  # e.g. "Visit2" or "Visit3" or ...
 
 # used by 'static':
 #   input file name str OR specific frame id as an int
-FILENAME = 4874
+FILENAME = 5143
 # e.g 4874 or 'cute_TRIM2D_scan_..._frmid_4874_..._midrows_55.fits' 
 
 # save figures/GIFs to the output folder
 SAVE = True
-output_dir = 'output'
 
 # -----------------------------
 
@@ -52,7 +51,6 @@ GRID_VISITS = ['Visit1', 'Visit2', 'Visit3', 'Visit4',
 SKIP_FRMID = [4929] # 'visit', 'grid', 'sequence': skips specified frameids in integer list input
 # Mars not in slit in frame 4929
 
-#-----------------
 # Boxcar smoothing for 1D spectra
 box_pts = 15
 # SAVE output dir

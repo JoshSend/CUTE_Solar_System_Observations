@@ -32,7 +32,7 @@ OBSERVER   = "earth"     # CUTE is in LEO; Earth-centre parallax on Mars is negl
 ABERRATION = "CN"        # SPICE aberration correction: 'CN' (default), 'LT+S', 'CN+S', ...
 NPIX       = 256         # image is NPIX x NPIX pixels (bump up for a finer disc)
 OVERWRITE  = True
-MAX_FRAMES = 40          # 16 reaches Visit 2 / frame 4860; set None for all
+MAX_FRAMES = None          # 16 reaches Visit 2 / frame 4860; set None for all
  
 PRIMARY_BACKPLANE = "INCIDENCE"                          # image in the primary HDU
 EXTRA_BACKPLANES  = ["EMISSION", "LON-GRAPHIC", "LAT-GRAPHIC"]
