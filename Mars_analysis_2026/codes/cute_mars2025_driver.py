@@ -30,7 +30,7 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'sequence'   : one 1D-spectrum panel that plays every frame of each visit
 #                  in turn, Visit1 -> ... -> Visit9.
 
-MODE = "visit_all"
+MODE = "sequence"
 
 # save figures/GIFs to the output folder
 SAVE = True 
@@ -69,8 +69,9 @@ STATIC_ALL_VMAX = None # Flux range max
 OVERLAY_PALETTE = None # colormap
 OVERLAY_YLIM = None # True = autoscale y-lim
 
-# Boxcar smoothing for 1D spectra
-box_pts = 15
+# --- random ---
+box_pts = 15 # Boxcar smoothing for 1D spectra
+fps = 2 # Frames per second for gifs.
 
 # --- output directory ---
 output_dir = 'output'
@@ -148,7 +149,7 @@ def main():
     elif MODE == "visit":
         out_path = _visit_out(VISIT)
         CuteObservation.animate_visit(
-            visit=VISIT, reference=ref, kind='both', fps=5,
+            visit=VISIT, reference=ref, kind='both', fps=fps,
             save=SAVE, output_dir=out_path, skip_frmid=SKIP_FRMID,
             box_pts=box_pts
         )
@@ -159,13 +160,13 @@ def main():
         out_root = _get_output_dir(output_dir, VISIT_SUBDIR)   # output/Spectra/
         CuteObservation.animate_all_visits(
             GRID_VISITS, reference=ref, output_root=out_root,
-            kind='both', fps=5, box_pts=box_pts, skip_frmid=SKIP_FRMID
+            kind='both', fps=fps, box_pts=box_pts, skip_frmid=SKIP_FRMID
         )
  
     elif MODE == "grid":
         out_path = _all_visits_out()
         CuteObservation.animate_grid(
-            GRID_VISITS, reference=ref, fps=5,
+            GRID_VISITS, reference=ref, fps=fps,
             save=SAVE, output_dir=out_path,
             skip_frmid=SKIP_FRMID
         )
@@ -173,7 +174,7 @@ def main():
     elif MODE == "sequence":
         out_path = _all_visits_out()
         CuteObservation.animate_sequence(
-            GRID_VISITS, reference=ref, fps=5,
+            GRID_VISITS, reference=ref, fps=fps,
             save=SAVE, output_dir=out_path,
             skip_frmid=SKIP_FRMID
         )
