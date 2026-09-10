@@ -39,7 +39,7 @@ output_dir.mkdir(parents=True, exist_ok=True)
 #     'gif'   one animation per visit per FOV, no PNGs        <- fastest
 #     'png'   one PNG per frame, no animation
 #     'both'  both, at roughly double the runtime
-MODE = 'gif'
+MODE = 'png'
  
 SHOW = False         # pop up each figure.  Leave False for a batch run --
                      # plt.show() on ~200 figures will stall the session.
@@ -198,7 +198,7 @@ def plot_frame(entry, row, save=SAVE_PNG, show=SHOW, capture=MAKE_GIF):
                          transform=ax.get_transform('world')))
  
     # boresight
-    ax.plot(ra, dec, '+', color='deepskyblue', ms=14, mew=2,
+    ax.plot(ra, dec, '+', color='deepskyblue', ms=14, mew=2, alpha=0.5,
             transform=ax.get_transform('world'))
  
     if SHOW_REFERENCE_SLIT:
