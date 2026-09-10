@@ -30,7 +30,7 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'sequence'   : one 1D-spectrum panel that plays every frame of each visit
 #                  in turn, Visit1 -> ... -> Visit9.
 
-MODE = "visit"
+MODE = "grid"
 
 # save figures/GIFs to the output folder
 SAVE = True
@@ -76,7 +76,7 @@ fps = 2 # Frames per second for gifs.
 # --- output directory ---
 output_dir = 'output'
 VISIT_SUBDIR = 'Spectra'
-ALL_VISITS_SUBDIR = os.path.join('codes', 'Spectra')
+ALL_VISITS_SUBDIR = 'Spectra'
 
 # ==============================================
  
