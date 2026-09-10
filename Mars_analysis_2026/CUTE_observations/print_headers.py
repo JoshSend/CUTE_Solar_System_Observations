@@ -1,5 +1,5 @@
 """
-Prints select headers from CUTE FITS files
+Prints headers from CUTE FITS files and outputs CUTE_mars_headers.csv
  
 @author: jose5987
 """
