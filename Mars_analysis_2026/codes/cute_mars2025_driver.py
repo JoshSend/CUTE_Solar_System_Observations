@@ -111,6 +111,8 @@ def main():
             spec_png  = os.path.join(out_path, f"{stem}_spectrum.png")
             fig1.savefig(trace_png, dpi=200, bbox_inches='tight')
             fig2.savefig(spec_png,  dpi=200, bbox_inches='tight')
+            csv_path = obs.save_spectrum_csv(os.path.join(out_path, 'csv'))
+            print(f"  {csv_path}")
             print(f"Saved:\n  {trace_png}\n  {spec_png}")
  
         plt.show()

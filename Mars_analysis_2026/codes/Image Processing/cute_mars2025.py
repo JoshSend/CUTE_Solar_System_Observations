@@ -202,6 +202,7 @@ class CuteObservation:
     C = 2.99792458e+10          # cm / s
     N_SCI_PIX = 2048            # science pixels (excludes overscan)
     APERTURE = 1.4              # science half-height = APERATURE *(measured FWHM / 2)
+    READ_NOISE = 3.6            # e- per pixel # PLACEHOLDER PLACEHOLDER PLACEHOLDER needs cute actual e- per pixel
 
     def __init__(
         self, fits_fname, reference: CuteReference, visit=None, base_dir=None,
@@ -325,34 +326,53 @@ class CuteObservation:
     def extract_spectrum(self):
         dk_arr = np.zeros(2048, dtype=float)
         sc_arr = np.zeros(2048, dtype=float)
+        err_arr = np.zeros(2048, dtype=float)          # 1-sigma error, in DN
         nrows = self.img.shape[0]
+        g = self.GAIN
+        rn2 = self.READ_NOISE ** 2
         clamp = lambda v: min(max(int(round(v)), 0), nrows)
 
         for i in range(2048):
             col = self.xval[i]
 
             yy1, yy2 = clamp(self.yval1_dk[i]), clamp(self.yval2_dk[i])
-            dk_arr[i] = np.median(self.img[yy1:yy2, col]) if yy2 > yy1 else 0.0
+            n_dk = yy2 - yy1
+            dk_arr[i] = np.median(self.img[yy1:yy2, col]) if n_dk > 0 else 0.0
 
             yy3, yy4 = clamp(self.yval1_sc[i]), clamp(self.yval2_sc[i])
-            if yy4 > yy3:
-                sc_arr[i] = np.sum(self.img[yy3:yy4, col] - dk_arr[i])
+            n_sc = yy4 - yy3
+            if n_sc > 0:
+                box_sum = float(np.sum(self.img[yy3:yy4, col]))   # DN, source+bkg
+                sc_arr[i] = box_sum - n_sc * dk_arr[i]            # dark-subtracted
 
+                # CCD aperture-sum error: Poisson of all electrons in the box,
+                # read noise per science pixel, and the uncertainty in the
+                # background level estimated from n_dk dark pixels.
+                total_e = g * box_sum
+                bkg_e = g * dk_arr[i]
+                var_e = total_e + n_sc * rn2
+                if n_dk > 0:
+                    var_e += (n_sc ** 2) * (bkg_e + rn2) / n_dk
+                err_arr[i] = np.sqrt(max(var_e, 0.0)) / g         # back to DN
+
+        self.sc_err_dn = err_arr
         return sc_arr
 
     def _compute_flux(self):
         """
-        Converts DN spectrum to photon flux density
-        in units of 10^-9 erg/s/cm^2/A
+        Converts DN spectrum to photon flux density in units of
+        10^-9 erg/s/cm^2/A, and propagates the per-pixel error the same way.
         """
         wave_sol = self.reference.wv_soln
         eff_area = self.reference.eff_area
+        wave_cm = wave_sol * 1.0e-8
 
-        mars_spec_e = self.spectra * (self.GAIN / self.exptime)      # DN -> e-/s
-        wave_cm = wave_sol * 1.0e-8                                  # Angstrom -> cm
-        flux_cgs = (mars_spec_e * self.H * self.C) / (wave_cm * eff_area)
+        # flux = spectra * conv, so the error scales by the same conv
+        conv = (self.GAIN / self.exptime) * (self.H * self.C) \
+            / (wave_cm * eff_area) / 1.0e-9
 
-        return flux_cgs / 1.0e-9
+        self.flux_err = self.sc_err_dn * conv
+        return self.spectra * conv
 
     # --------- outputs ---------
     def _extract_frame_id(self):
@@ -434,7 +454,7 @@ class CuteObservation:
                           kind='both', box_pts=15, xlim=(2490, 3250),
                           ylim=(0.0, 2.0), vmin=None, vmax=None,
                           pattern='*.fits', skip_frmid=None, dpi=200,
-                          overwrite=True, verbose=True):
+                          overwrite=True, verbose=True, write_csv=True):
         '''
         Save a static PNG for EVERY frame in one visit -- no manual FILENAME.
 
@@ -484,6 +504,9 @@ class CuteObservation:
                 skipped += 1
                 continue
 
+            if write_csv:
+                obs.save_spectrum(os.path.join(output_dir, 'csv'))
+
             obs = cls(f, reference, visit=visit)
             for k, path in targets.items():
                 if k == 'trace':
@@ -501,6 +524,16 @@ class CuteObservation:
                 msg += f" ({skipped} frame(s) already on disk, left alone)"
             print(f"  {msg} -> {output_dir}")
         return saved
+
+    def save_spectrum_csv(self, output_dir):
+        """Write this frame's 1D spectrum as wave,flux,error (one row per pixel)."""
+        os.makedirs(output_dir, exist_ok=True)
+        stem = os.path.splitext(os.path.basename(self.fits_fname))[0]
+        path = os.path.join(output_dir, f"{stem}.csv")
+        arr = np.column_stack([self.reference.wv_soln, self.flux, self.flux_err])
+        np.savetxt(path, arr, delimiter=',', header='wave,flux,err',
+                   comments='', fmt='%.6e')
+        return path
 
     @classmethod
     def save_all_frames(cls, visits, reference=None, output_root=None,
