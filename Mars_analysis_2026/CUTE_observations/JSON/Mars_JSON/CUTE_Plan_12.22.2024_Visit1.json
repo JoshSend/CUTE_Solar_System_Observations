@@ -1,0 +1,1193 @@
+{
+    "author": "sebastian.escobar@lasp.colorado.edu",
+    "timestamp": "20241218T115148",
+    "comments": "Questions? Email sebastian.escobar@lasp.colorado.edu",
+    "storedCommands": [
+        {
+            "start_date": "2024/357-00:39:10",
+            "end_date": "2024/359-19:07:05",
+            "description": "",
+            "comments": "Sequence: 1x Bias (15) -> 1x Dark (8) -> 2x Science (15) -> 1x Dark (8) -> 1x Bias (15). Frame IDs = 3703-3764. Boulder Passovers = 12. NCU Passover = 9. Wallops Passovers = 10.",
+            "commands": [
+                {
+                    "command_type": "xb1",
+                    "mnemonic": "GOTO_ECI_ATTITUDE",
+                    "args": {
+                        "PRI_CMD_DIR": 3.0,
+                        "SEC_CMD_DIR": 1.0,
+                        "Q_CMD_WRT_REF_1": 0.4461502601,
+                        "Q_CMD_WRT_REF_2": 0.8700245095,
+                        "Q_CMD_WRT_REF_3": 0.1549950383,
+                        "Q_CMD_WRT_REF_4": -0.1413641976
+                    },
+                    "utc_time": "2024/357-00:39:10"
+                },
+                {
+                    "command_type": "SET_CCD_FR_ID",
+                    "mnemonic": "PLD_CCD_SET_ID",
+                    "args": {
+                        "ID": 3703.0
+                    },
+                    "utc_time": "2024/357-00:44:10"
+                },
+                {
+                    "command_type": "fsw",
+                    "mnemonic": "PLD_CCD_EXPOSE_CLOSED",
+                    "args": {
+                        "TIME": 0.0,
+                        "NUM": 15.0,
+                        "TARGETID": 0.0,
+                        "OPT1": 7.0,
+                        "OPT2": 0.0,
+                        "OPT3": 0.0,
+                        "OPT4": 0.0,
+                        "DARKSRC": 1.0,
+                        "BIASSRC": 0.0,
+                        "DST": 16.0
+                    },
+                    "utc_time": "2024/357-00:46:15"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-01:07:35"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Charging",
+                    "args": {},
+                    "utc_time": "2024/357-01:14:45"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-01:54:25"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/357-02:05:50"
+                },
+                {
+                    "command_type": "xb1",
+                    "mnemonic": "GOTO_ECI_ATTITUDE",
+                    "args": {
+                        "PRI_CMD_DIR": 3.0,
+                        "SEC_CMD_DIR": 1.0,
+                        "Q_CMD_WRT_REF_1": 0.4462505497,
+                        "Q_CMD_WRT_REF_2": 0.869961605,
+                        "Q_CMD_WRT_REF_3": 0.1550334024,
+                        "Q_CMD_WRT_REF_4": -0.1413927047
+                    },
+                    "utc_time": "2024/357-02:12:30"
+                },
+                {
+                    "command_type": "SET_CCD_FR_ID",
+                    "mnemonic": "PLD_CCD_SET_ID",
+                    "args": {
+                        "ID": 3718.0
+                    },
+                    "utc_time": "2024/357-02:17:30"
+                },
+                {
+                    "command_type": "fsw",
+                    "mnemonic": "PLD_CCD_EXPOSE_CLOSED",
+                    "args": {
+                        "TIME": 60000.0,
+                        "NUM": 8.0,
+                        "TARGETID": 255.0,
+                        "OPT1": 7.0,
+                        "OPT2": 0.0,
+                        "OPT3": 0.0,
+                        "OPT4": 0.0,
+                        "DARKSRC": 1.0,
+                        "BIASSRC": 0.0,
+                        "DST": 16.0
+                    },
+                    "utc_time": "2024/357-02:19:35"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Charging",
+                    "args": {},
+                    "utc_time": "2024/357-02:39:10"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-02:41:25"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-03:28:20"
+                },
+                {
+                    "command_type": "xb1",
+                    "mnemonic": "GOTO_ECI_ATTITUDE",
+                    "args": {
+                        "PRI_CMD_DIR": 3.0,
+                        "SEC_CMD_DIR": 1.0,
+                        "Q_CMD_WRT_REF_1": 0.1467313674,
+                        "Q_CMD_WRT_REF_2": -0.1583502104,
+                        "Q_CMD_WRT_REF_3": 0.868980835,
+                        "Q_CMD_WRT_REF_4": 0.4452723045
+                    },
+                    "utc_time": "2024/357-03:42:20"
+                },
+                {
+                    "command_type": "SET_CCD_FR_ID",
+                    "mnemonic": "PLD_CCD_SET_ID",
+                    "args": {
+                        "ID": 3726.0
+                    },
+                    "utc_time": "2024/357-03:47:20"
+                },
+                {
+                    "command_type": "fsw",
+                    "mnemonic": "PLD_CCD_EXPOSE_CLOSED",
+                    "args": {
+                        "TIME": 60000.0,
+                        "NUM": 10.0,
+                        "TARGETID": 340.0,
+                        "OPT1": 7.0,
+                        "OPT2": 0.0,
+                        "OPT3": 0.0,
+                        "OPT4": 0.0,
+                        "DARKSRC": 1.0,
+                        "BIASSRC": 0.0,
+                        "DST": 16.0
+                    },
+                    "utc_time": "2024/357-03:49:25"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Charging",
+                    "args": {},
+                    "utc_time": "2024/357-04:13:50"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-04:15:20"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-05:02:10"
+                },
+                {
+                    "command_type": "xb1",
+                    "mnemonic": "GOTO_ECI_ATTITUDE",
+                    "args": {
+                        "PRI_CMD_DIR": 3.0,
+                        "SEC_CMD_DIR": 1.0,
+                        "Q_CMD_WRT_REF_1": 0.1467591645,
+                        "Q_CMD_WRT_REF_2": -0.1583894805,
+                        "Q_CMD_WRT_REF_3": 0.8689172269,
+                        "Q_CMD_WRT_REF_4": 0.4453732962
+                    },
+                    "utc_time": "2024/357-05:16:10"
+                },
+                {
+                    "command_type": "SET_CCD_FR_ID",
+                    "mnemonic": "PLD_CCD_SET_ID",
+                    "args": {
+                        "ID": 3736.0
+                    },
+                    "utc_time": "2024/357-05:21:10"
+                },
+                {
+                    "command_type": "fsw",
+                    "mnemonic": "PLD_CCD_EXPOSE_CLOSED",
+                    "args": {
+                        "TIME": 60000.0,
+                        "NUM": 5.0,
+                        "TARGETID": 340.0,
+                        "OPT1": 7.0,
+                        "OPT2": 0.0,
+                        "OPT3": 0.0,
+                        "OPT4": 0.0,
+                        "DARKSRC": 1.0,
+                        "BIASSRC": 0.0,
+                        "DST": 16.0
+                    },
+                    "utc_time": "2024/357-05:23:15"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Charging",
+                    "args": {},
+                    "utc_time": "2024/357-05:35:35"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-05:49:10"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-06:36:00"
+                },
+                {
+                    "command_type": "xb1",
+                    "mnemonic": "GOTO_ECI_ATTITUDE",
+                    "args": {
+                        "PRI_CMD_DIR": 3.0,
+                        "SEC_CMD_DIR": 1.0,
+                        "Q_CMD_WRT_REF_1": 0.4465519671,
+                        "Q_CMD_WRT_REF_2": 0.8697727698,
+                        "Q_CMD_WRT_REF_3": 0.1551481153,
+                        "Q_CMD_WRT_REF_4": -0.1414769661
+                    },
+                    "utc_time": "2024/357-06:49:40"
+                },
+                {
+                    "command_type": "SET_CCD_FR_ID",
+                    "mnemonic": "PLD_CCD_SET_ID",
+                    "args": {
+                        "ID": 3741.0
+                    },
+                    "utc_time": "2024/357-06:54:40"
+                },
+                {
+                    "command_type": "fsw",
+                    "mnemonic": "PLD_CCD_EXPOSE_CLOSED",
+                    "args": {
+                        "TIME": 60000.0,
+                        "NUM": 8.0,
+                        "TARGETID": 255.0,
+                        "OPT1": 7.0,
+                        "OPT2": 0.0,
+                        "OPT3": 0.0,
+                        "OPT4": 0.0,
+                        "DARKSRC": 1.0,
+                        "BIASSRC": 0.0,
+                        "DST": 16.0
+                    },
+                    "utc_time": "2024/357-06:56:45"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Charging",
+                    "args": {},
+                    "utc_time": "2024/357-07:16:20"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-07:23:00"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/357-07:57:30"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-08:09:50"
+                },
+                {
+                    "command_type": "xb1",
+                    "mnemonic": "GOTO_ECI_ATTITUDE",
+                    "args": {
+                        "PRI_CMD_DIR": 3.0,
+                        "SEC_CMD_DIR": 1.0,
+                        "Q_CMD_WRT_REF_1": 0.4466553311,
+                        "Q_CMD_WRT_REF_2": 0.869708054,
+                        "Q_CMD_WRT_REF_3": 0.1551873198,
+                        "Q_CMD_WRT_REF_4": -0.1415055184
+                    },
+                    "utc_time": "2024/357-08:23:30"
+                },
+                {
+                    "command_type": "SET_CCD_FR_ID",
+                    "mnemonic": "PLD_CCD_SET_ID",
+                    "args": {
+                        "ID": 3749.0
+                    },
+                    "utc_time": "2024/357-08:28:30"
+                },
+                {
+                    "command_type": "fsw",
+                    "mnemonic": "PLD_CCD_EXPOSE_CLOSED",
+                    "args": {
+                        "TIME": 0.0,
+                        "NUM": 15.0,
+                        "TARGETID": 0.0,
+                        "OPT1": 7.0,
+                        "OPT2": 0.0,
+                        "OPT3": 0.0,
+                        "OPT4": 0.0,
+                        "DARKSRC": 1.0,
+                        "BIASSRC": 0.0,
+                        "DST": 16.0
+                    },
+                    "utc_time": "2024/357-08:30:35"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Charging",
+                    "args": {},
+                    "utc_time": "2024/357-08:52:05"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-08:56:50"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/357-09:29:25"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-09:43:40"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-10:30:40"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/357-11:00:40"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-11:17:30"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-12:04:30"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/357-12:32:55"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-12:51:20"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "NCU Passover",
+                    "args": {
+                        "los_time": "2024/357-13:30:30"
+                    },
+                    "utc_time": "2024/357-13:20:00"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-13:38:20"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/357-14:07:00"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-14:25:15"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "NCU Passover",
+                    "args": {
+                        "los_time": "2024/357-15:02:00"
+                    },
+                    "utc_time": "2024/357-14:54:20"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-15:12:10"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Wallops Passover",
+                    "args": {
+                        "los_time": "2024/357-15:34:35"
+                    },
+                    "utc_time": "2024/357-15:23:45"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-15:59:05"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-16:46:05"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Boulder Passover",
+                    "args": {
+                        "los_time": "2024/357-17:07:50"
+                    },
+                    "utc_time": "2024/357-16:57:30"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Wallops Passover",
+                    "args": {
+                        "los_time": "2024/357-17:04:50"
+                    },
+                    "utc_time": "2024/357-16:58:05"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-17:32:55"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-18:19:55"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Boulder Passover",
+                    "args": {
+                        "los_time": "2024/357-18:39:55"
+                    },
+                    "utc_time": "2024/357-18:30:45"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-19:06:45"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-19:53:45"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-20:40:35"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/357-20:57:20"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-21:27:35"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-22:14:25"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/357-22:29:45"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-23:01:25"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/357-23:48:15"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/358-00:00:55"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-00:35:15"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "NCU Passover",
+                    "args": {
+                        "los_time": "2024/358-00:58:45"
+                    },
+                    "utc_time": "2024/358-00:53:40"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-01:22:05"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/358-01:33:15"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Wallops Passover",
+                    "args": {
+                        "los_time": "2024/358-02:04:40"
+                    },
+                    "utc_time": "2024/358-01:54:50"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-02:09:05"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "NCU Passover",
+                    "args": {
+                        "los_time": "2024/358-02:34:35"
+                    },
+                    "utc_time": "2024/358-02:23:55"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-02:55:55"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/358-03:11:10"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Wallops Passover",
+                    "args": {
+                        "los_time": "2024/358-03:37:35"
+                    },
+                    "utc_time": "2024/358-03:27:35"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Boulder Passover",
+                    "args": {
+                        "los_time": "2024/358-03:38:50"
+                    },
+                    "utc_time": "2024/358-03:30:15"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-03:42:55"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-04:29:45"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Boulder Passover",
+                    "args": {
+                        "los_time": "2024/358-05:12:25"
+                    },
+                    "utc_time": "2024/358-05:01:45"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-05:16:45"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-06:03:35"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-06:50:35"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-07:37:30"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-08:24:25"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/358-08:57:45"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-09:11:20"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-09:58:15"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/358-10:29:20"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-10:45:10"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-11:32:05"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/358-12:00:50"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-12:19:00"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "NCU Passover",
+                    "args": {
+                        "los_time": "2024/358-12:57:45"
+                    },
+                    "utc_time": "2024/358-12:49:00"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-13:06:00"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/358-13:34:20"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-13:52:50"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "NCU Passover",
+                    "args": {
+                        "los_time": "2024/358-14:31:05"
+                    },
+                    "utc_time": "2024/358-14:20:55"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-14:39:50"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Wallops Passover",
+                    "args": {
+                        "los_time": "2024/358-15:02:05"
+                    },
+                    "utc_time": "2024/358-14:51:55"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/358-15:11:40"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-15:26:40"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-16:13:40"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Wallops Passover",
+                    "args": {
+                        "los_time": "2024/358-16:34:20"
+                    },
+                    "utc_time": "2024/358-16:25:05"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Boulder Passover",
+                    "args": {
+                        "los_time": "2024/358-16:34:50"
+                    },
+                    "utc_time": "2024/358-16:26:00"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-17:00:30"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-17:47:30"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Boulder Passover",
+                    "args": {
+                        "los_time": "2024/358-18:08:40"
+                    },
+                    "utc_time": "2024/358-17:58:15"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-18:34:20"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-19:21:20"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-20:08:10"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/358-20:25:25"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-20:55:10"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-21:42:00"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/358-21:58:00"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-22:29:00"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/358-23:15:50"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/358-23:29:25"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-00:02:50"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-00:49:40"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/359-01:00:45"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Wallops Passover",
+                    "args": {
+                        "los_time": "2024/359-01:31:45"
+                    },
+                    "utc_time": "2024/359-01:24:10"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-01:36:40"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "NCU Passover",
+                    "args": {
+                        "los_time": "2024/359-02:02:25"
+                    },
+                    "utc_time": "2024/359-01:51:55"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-02:23:30"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/359-02:36:50"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Wallops Passover",
+                    "args": {
+                        "los_time": "2024/359-03:05:45"
+                    },
+                    "utc_time": "2024/359-02:54:55"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Boulder Passover",
+                    "args": {
+                        "los_time": "2024/359-03:05:30"
+                    },
+                    "utc_time": "2024/359-03:00:15"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-03:10:30"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "NCU Passover",
+                    "args": {
+                        "los_time": "2024/359-03:33:15"
+                    },
+                    "utc_time": "2024/359-03:26:05"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-03:57:20"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Boulder Passover",
+                    "args": {
+                        "los_time": "2024/359-04:40:20"
+                    },
+                    "utc_time": "2024/359-04:29:35"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-04:44:20"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-05:31:10"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Boulder Passover",
+                    "args": {
+                        "los_time": "2024/359-06:11:55"
+                    },
+                    "utc_time": "2024/359-06:04:35"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-06:18:10"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-07:05:00"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-07:52:00"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/359-08:25:55"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-08:38:50"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-09:25:50"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/359-09:57:50"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-10:12:40"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-10:59:40"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/359-11:29:00"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-11:46:30"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-12:33:30"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/359-13:01:35"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-13:20:20"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "NCU Passover",
+                    "args": {
+                        "los_time": "2024/359-13:59:15"
+                    },
+                    "utc_time": "2024/359-13:48:25"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-14:07:15"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Wallops Passover",
+                    "args": {
+                        "los_time": "2024/359-14:28:45"
+                    },
+                    "utc_time": "2024/359-14:20:30"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "SAA",
+                    "args": {},
+                    "utc_time": "2024/359-14:37:05"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-14:54:10"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-15:41:05"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Wallops Passover",
+                    "args": {
+                        "los_time": "2024/359-16:03:00"
+                    },
+                    "utc_time": "2024/359-15:52:30"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Boulder Passover",
+                    "args": {
+                        "los_time": "2024/359-16:00:25"
+                    },
+                    "utc_time": "2024/359-15:55:20"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-16:28:00"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-17:14:55"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Boulder Passover",
+                    "args": {
+                        "los_time": "2024/359-17:36:45"
+                    },
+                    "utc_time": "2024/359-17:26:00"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-18:01:50"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Polar Keepout",
+                    "args": {},
+                    "utc_time": "2024/359-18:48:45"
+                },
+                {
+                    "command_type": "placeholder",
+                    "mnemonic": "Boulder Passover",
+                    "args": {
+                        "los_time": "2024/359-19:07:05"
+                    },
+                    "utc_time": "2024/359-19:00:10"
+                }
+            ]
+        }
+    ]
+}
