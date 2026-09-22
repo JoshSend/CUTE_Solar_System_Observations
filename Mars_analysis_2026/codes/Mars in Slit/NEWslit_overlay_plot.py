@@ -27,7 +27,8 @@ project_root = base_dir.parent.parent        # ...\Mars_analysis_2026\
 codes_dir = project_root / 'codes'           # ...\codes\
 out_dir = codes_dir / 'output'               # ...\codes\output\
 
-csv_dir = out_dir / 'mars_pointing.csv'
+#csv_dir = out_dir / 'mars_pointing.csv'
+csv_dir = out_dir / 'mars_pointing_JSON.csv'
 fits_dir = out_dir / 'Mars_Fits'             # organised as Mars_Fits\Visit*\
 output_dir = out_dir / 'Slit_Overlay'        # written as Slit_Overlay\Visit*\
 output_dir.mkdir(parents=True, exist_ok=True)
@@ -39,9 +40,11 @@ output_dir.mkdir(parents=True, exist_ok=True)
 #     'gif'   one animation per visit per FOV, no PNGs        <- fastest
 #     'png'   one PNG per frame, no animation
 #     'both'  both, at roughly double the runtime
-MODE = 'attitude'
+#     'attitude' outputs the CSV of data for positioning against "boresight" in slit
 
-SHOW = True         # pop up each figure.  Leave False for a batch run --
+MODE = 'both'
+
+SHOW = False         # pop up each figure.  Leave False for a batch run --
                      # plt.show() on ~200 figures will stall the session.
 OVERWRITE = True     # False skips work whose output already exists: in 'png'
                      # mode a frame whose PNG is present, in 'gif' mode an
