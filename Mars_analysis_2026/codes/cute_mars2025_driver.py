@@ -30,7 +30,7 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'sequence'   : one 1D-spectrum panel that plays every frame of each visit
 #                  in turn, Visit1 -> ... -> Visit9.
 
-MODE = "grid"
+MODE = "static_all"
 
 # save figures/GIFs to the output folder
 SAVE = True

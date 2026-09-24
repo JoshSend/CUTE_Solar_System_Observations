@@ -504,10 +504,7 @@ class CuteObservation:
                 skipped += 1
                 continue
 
-            if write_csv:
-                obs.save_spectrum(os.path.join(output_dir, 'csv'))
-
-            obs = cls(f, reference, visit=visit)
+            obs = cls(f, reference, visit=visit)          # obs created HERE
             for k, path in targets.items():
                 if k == 'trace':
                     fig, _ = obs.plot_trace(vmin=vmin, vmax=vmax)
@@ -515,8 +512,11 @@ class CuteObservation:
                     fig, _ = obs.plot_spectrum(box_pts=box_pts,
                                                xlim=xlim, ylim=ylim)
                 fig.savefig(path, dpi=dpi, bbox_inches='tight')
-                plt.close(fig)          # free the figure -- batches get big
+                plt.close(fig)
                 saved.append(path)
+
+            if write_csv:
+                obs.save_spectrum_csv(os.path.join(output_dir, 'csv'))
 
         if verbose:
             msg = f"{visit}: saved {len(saved)} PNG(s) for {len(files)} frame(s)"
