@@ -10,11 +10,8 @@ from pathlib import Path
 from glob import glob
 import pandas as pd
 
-# User Inputs
-csv_dir = ''
-
 # Helpers
-def _get_spectra_dir()->Path:
+def _get_spectra_dir()->Path: # gets directory for Mars spectra
     try:
         base_dir = Path(__file__).resolve().parent
     except NameError:
@@ -69,9 +66,6 @@ def main():
 
     max_flux_df = max_flux_per_visit(df)
     print(max_flux_df.to_string(index=False))
-
-    
-
 
 if __name__ == '__main__':
     main()
