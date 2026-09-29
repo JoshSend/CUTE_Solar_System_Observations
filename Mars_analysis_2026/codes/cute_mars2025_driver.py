@@ -29,11 +29,16 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'grid'       : grid movie, one 1D-spectrum panel per visit in GRID_VISITS.
 #   'sequence'   : one 1D-spectrum panel that plays every frame of each visit
 #                  in turn, Visit1 -> ... -> Visit9.
+#   'bright'     : 
+#   'bright_all' : 
 
-MODE = "static"
+MODE = "sequence"
 
 # save figures/GIFs to the output folder
-SAVE = False
+SAVE = True
+
+FIT = True # Fit spectra to the brightest frame in each visit
+           # using least squares method.  
 
 # used by 'static' and 'visit':
 #   input visit folder name str
@@ -41,9 +46,9 @@ VISIT = 'Visit3' # e.g. "Visit2" or "Visit3" or ...
 
 # used by 'static':
 #   input file name str OR specific frame id as an int
-FILENAME = 4874
-# e.g 4874 or 'cute_TRIM2D_scan_..._frmid_4874_..._midrows_55.fits' 
-
+FILENAME = 4923
+# e.g 4874 or 'cute_TRIM2D_scan_..._frmid_4874_..._midrows_55.fits'
+ 
 # -----------------------------
 # OPTIONAL (more specific) USER INPUTS
 
@@ -80,8 +85,22 @@ CuteObservation.SCI_HALF = None # Half of science trace region.
 output_dir = 'output'
 VISIT_SUBDIR = 'Spectra'
 ALL_VISITS_SUBDIR = 'Spectra'
+CORR_SUBDIR = 'Correlation'
+
+if FIT:
+    VISIT_SUBDIR = ALL_VISITS_SUBDIR = 'Spectra_fit'
 
 # ==============================================
+
+# brightest frame per visit
+BRIGHTEST = {
+    'Visit1': 3739, 'Visit2': 4860, 'Visit3': 4926, 'Visit4': 4975,
+    'Visit5': 5030, 'Visit7': 5145, 'Visit8': 5209, 'Visit9': 5260,
+}
+
+def _brightness_csv(visit):
+    return _get_output_dir(output_dir,
+                           os.path.join('Spectra', visit, 'csv'))
  
 def _visit_out(visit):
     """output/Spectra/<Visit>/ -- products belonging to one visit."""
@@ -91,9 +110,14 @@ def _visit_out(visit):
 def _all_visits_out():
     """output/codes/Spectra/ -- products spanning every visit."""
     return _get_output_dir(output_dir, ALL_VISITS_SUBDIR)
+
+def _correlation_out(visit):
+    return _get_output_dir(os.path.join(output_dir, 'Correlation'), visit)
  
  
 def main():
+    CuteObservation.FIT = FIT
+    CuteObservation.FIT_TO = BRIGHTEST if FIT else None
     ref = CuteReference()
  
     if MODE == "static":
@@ -110,8 +134,9 @@ def main():
  
         if SAVE:
             stem = os.path.splitext(os.path.basename(obs.fits_fname))[0]
-            trace_png = os.path.join(out_path, f"{stem}_trace.png")
-            spec_png  = os.path.join(out_path, f"{stem}_spectrum.png")
+            tag = CuteObservation.fit_tag()
+            trace_png = os.path.join(out_path, f"{stem}_trace{tag}.png")
+            spec_png  = os.path.join(out_path, f"{stem}_spectrum{tag}.png")
             fig1.savefig(trace_png, dpi=200, bbox_inches='tight')
             fig2.savefig(spec_png,  dpi=200, bbox_inches='tight')
             csv_path = obs.save_spectrum_csv(os.path.join(out_path, 'csv'))
@@ -183,6 +208,20 @@ def main():
             save=SAVE, output_dir=out_path,
             skip_frmid=SKIP_FRMID
         )
+
+    elif MODE == 'bright':
+        csv_dir = _brightness_csv(VISIT)
+        out = _correlation_out(VISIT) if SAVE else None
+        CuteObservation.plot_brightness_correlation(
+            VISIT, BRIGHTEST[VISIT], csv_dir,
+            save=SAVE, output_dir=out, show=not SAVE or True)
+
+    elif MODE == 'bright_all':
+        for v, fid in BRIGHTEST.items():
+            csv_dir = _brightness_csv(v)
+            out = _correlation_out(v) if SAVE else None
+            CuteObservation.plot_brightness_correlation(
+                v, fid, csv_dir, save=SAVE, output_dir=out, show=not SAVE)
  
     else:
         raise ValueError(

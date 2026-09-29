@@ -14,6 +14,7 @@ import glob                          # glob
 import numpy as np                   # computation
 from astropy.io import fits          # fit handling
 import matplotlib.pyplot as plt      # plotting
+import re
 
 # Animation
 from matplotlib.animation import FuncAnimation, PillowWriter
@@ -60,25 +61,33 @@ def _get_output_dir(output_dir, visit=None):
 def _resolve_frame(folder, file_or_frmid):
     '''
     Turn `file_or_frmid` into a full FITS path inside `folder`.
-    Accepts either a full filename ('...frmid_4868_...fits') or a frame id
-    (the int 4868, or the string '4868'), which is looked up in the folder.
+    Accepts either a full filename ('...frmid_4923_...fits')
+    or the frame id (the int 4923, or the string '4923'), which is
+    matched against the `frmid_<n>` field of the filenames in `folder`.
     '''
     s = str(file_or_frmid)
-    if s.endswith('.fits'):                       # a full filename was given
+    if s.endswith('.fits'):                      # a full filename
         path = os.path.join(folder, s)
         if not os.path.exists(path):
             raise FileNotFoundError(f'FITS file not found at: {path}')
         return path
 
-    frmid = int(file_or_frmid)                    # otherwise treat as a frame id
-    hits = [p for p in glob.glob(os.path.join(folder, '*.fits'))
-            if CuteObservation._frmid_of(p) == frmid]
-    if not hits:
-        raise FileNotFoundError(f'No FITS file with frmid {frmid} in {folder}')
-    if len(hits) > 1:
-        raise ValueError(f'Multiple files with frmid {frmid} in {folder}: '
-                         f'{[os.path.basename(h) for h in hits]}')
-    return hits[0]
+    frmid = int(file_or_frmid)                   # otherwise, look it up by id
+    # match the frmid_<number> field exactly, ignoring targetID340, dates, etc.
+    pat = re.compile(r'frmid[_-]?0*' + str(frmid) + r'(?!\d)')
+    for fn in sorted(os.listdir(folder)):
+        if fn.lower().endswith('.fits') and pat.search(fn):
+            return os.path.join(folder, fn)
+
+    # not found: report what's actually available
+    avail = sorted(
+        int(m.group(1))
+        for fn in os.listdir(folder) if fn.lower().endswith('.fits')
+        for m in [re.search(r'frmid[_-]?(\d+)', fn)] if m
+    )
+    raise FileNotFoundError(
+        f'No FITS file with frmid {frmid} in {folder}. '
+        f'Available frmids: {avail}')
 
 def load_observation(visit, filename, reference=None):
     """
@@ -205,6 +214,12 @@ class CuteObservation:
     SCI_HALF = None             # rows: set a number for fixed half-height. None = adaptive
     READ_NOISE = 3.6            # e- per pixel # PLACEHOLDER PLACEHOLDER PLACEHOLDER needs cute actual e- per pixel
 
+    # ---- fiting ----
+    FIT = False
+    FIT_TO = None
+    FIT_BAND = (2490,3250)
+    _bright_flux_cache = {}
+
     def __init__(
         self, fits_fname, reference: CuteReference, visit=None, base_dir=None,
         track=True, widen=True,
@@ -243,6 +258,17 @@ class CuteObservation:
 
         self.spectra = self.extract_spectrum()
         self.flux = self._compute_flux()
+
+        self.fit_scale = 1.0
+        if self.FIT and self.FIT_TO and self.visit in self.FIT_TO:
+            self.fit_scale = self._fit_to_brightest()
+            self.flux = self.flux * self.fit_scale
+            self.flux_err = self.flux_err * self.fit_scale
+
+    @classmethod
+    def fit_tag(cls):
+        """'_FIT' when fitting is on, else '' -- appended to saved filenames."""
+        return '_FIT' if cls.FIT else ''
 
     def _load_image(self):
         with fits.open(self.fits_fname) as fits_file:
@@ -384,6 +410,41 @@ class CuteObservation:
         self.flux_err = self.sc_err_dn * conv
         return self.spectra * conv
 
+    def _fit_to_brightest(self):
+        """
+        Least-squares scale a (through the origin) so that a*flux best matches
+        the visit's brightest frame over FIT_BAND:  a = sum(f_b*f_o)/sum(f_o^2).
+        The brightest frame is its own reference and returns 1.0.
+        """
+        try:
+            fid = int(self.frame_id)
+        except (TypeError, ValueError):
+            return 1.0
+        if fid == int(self.FIT_TO[self.visit]):
+            return 1.0
+
+        wv_b, fx_b = self._get_bright_flux()
+        wave = self.reference.wv_soln
+        lo, hi = self.FIT_BAND
+        band = (wave >= lo) & (wave <= hi)
+        fo, fb = self.flux[band], fx_b[band]
+        denom = float(np.sum(fo * fo))
+        return float(np.sum(fb * fo) / denom) if denom > 0 else 1.0
+
+    def _get_bright_flux(self):
+        """(wave, flux) of this visit's brightest frame -- reduced once, then cached."""
+        if self.visit not in self._bright_flux_cache:
+            folder = os.path.join(_get_observations_dir(), self.visit)
+            path = _resolve_frame(folder, int(self.FIT_TO[self.visit]))
+            saved = type(self).FIT
+            type(self).FIT = False            # reduce the reference WITHOUT fitting -> no recursion
+            try:
+                b = type(self)(path, self.reference, visit=self.visit)
+            finally:
+                type(self).FIT = saved
+            self._bright_flux_cache[self.visit] = (b.reference.wv_soln, b.flux)
+        return self._bright_flux_cache[self.visit]
+
     # --------- outputs ---------
     def _extract_frame_id(self):
         """
@@ -448,15 +509,10 @@ class CuteObservation:
         return fig, ax
 
     @staticmethod
-    def _frmid_of(path):
-        '''
-        Frame-id number from a filename, for sorting frames in order.
-        '''
-        parts = os.path.basename(path).split('_')
-        if 'frmid' in parts:
-            tok = parts[parts.index('frmid') + 1]
-            return int(tok) if tok.isdigit() else tok
-        return os.path.basename(path)
+    def _frmid_of(fname):
+        """Pull the frame id out of a filename via its frmid_<n> field."""
+        m = re.search(r'frmid[_-]?(\d+)', os.path.basename(fname))
+        return int(m.group(1)) if m else None
 
     # --------- batch static saves ---------
     @classmethod
@@ -507,7 +563,7 @@ class CuteObservation:
         saved, skipped = [], 0
         for f in files:
             stem = os.path.splitext(os.path.basename(f))[0]
-            targets = {k: os.path.join(output_dir, f"{stem}_{k}.png")
+            targets = {k: os.path.join(output_dir, f"{stem}_{k}{cls.fit_tag()}.png")
                        for k in kinds}
 
             if not overwrite and all(os.path.exists(p) for p in targets.values()):
@@ -539,7 +595,7 @@ class CuteObservation:
         """Write this frame's 1D spectrum as wave,flux,error (one row per pixel)."""
         os.makedirs(output_dir, exist_ok=True)
         stem = os.path.splitext(os.path.basename(self.fits_fname))[0]
-        path = os.path.join(output_dir, f"{stem}.csv")
+        path = os.path.join(output_dir, f"{stem}{self.fit_tag()}.csv")
         arr = np.column_stack([self.reference.wv_soln, self.flux, self.flux_err])
         np.savetxt(path, arr, delimiter=',', header='wave,flux,err',
                    comments='', fmt='%.6e')
@@ -665,7 +721,7 @@ class CuteObservation:
             if output_dir is None:
                 raise ValueError("save=True needs an output_dir")
             os.makedirs(output_dir, exist_ok=True)
-            path = os.path.join(output_dir, f"{visit}_overlay.png")
+            path = os.path.join(output_dir, f"{visit}_overlay{cls.fit_tag()}.png")
             fig.savefig(path, dpi=dpi, bbox_inches='tight')
             print(f"Saved {path}  ({n} frames)")
 
@@ -727,11 +783,118 @@ class CuteObservation:
             if output_dir is None:
                 raise ValueError("save=True needs an output_dir")
             os.makedirs(output_dir, exist_ok=True)
-            path = os.path.join(output_dir, "grid_overlay.png")
+            path = os.path.join(output_dir, f"grid_overlay{cls.fit_tag()}.png")
             fig.savefig(path, dpi=dpi, bbox_inches='tight')
             print(f"Saved {path}")
         plt.show()
         return fig, axes
+
+    # ---- palette reused from the overlay plots -------------------------------
+    OVERLAY_COLORS = plt.cm.viridis(np.linspace(0, 0.85, 12))
+
+    @classmethod
+    def plot_brightness_correlation(cls, visit, brightest_frmid, csv_dir,
+                                    xlim=(2490, 3250), box_pts=15,
+                                    dim_alpha=0.50, bright_color='gold',
+                                    palette=None, save=False, output_dir=None,
+                                    dpi=200, show=True):
+        """
+        Two-panel figure built from the per-frame CSVs in
+        Spectra/Trace_Tracking/<visit>/csv/.
+
+        Top:    every frame's flux(wavelength) overlaid; the brightest frame
+                drawn in `bright_color` at full alpha / high zorder, all others
+                dimmed to `dim_alpha`.
+        Bottom: for each non-brightest frame, a scatter of its flux vs the
+                brightest frame's flux (over the xlim band) with a 1:1 dashed
+                reference line; Pearson r is shown per frame in the legend.
+        """
+        # ---- gather CSVs ------------------------------------------------------
+        paths = sorted(glob.glob(os.path.join(csv_dir, '*.csv')),
+                       key=lambda p: (cls._frmid_of(p) or 0))
+        if not paths:
+            raise FileNotFoundError(f"No CSV files found in {csv_dir}")
+
+        frames = {}          # frmid -> (wave, flux)
+        for p in paths:
+            fid = cls._frmid_of(p)
+            if fid is None:
+                continue
+            d = np.genfromtxt(p, delimiter=',', names=True)
+            # tolerate iSLAT-style header renames
+            wname = 'wave' if 'wave' in d.dtype.names else d.dtype.names[0]
+            fname = 'flux' if 'flux' in d.dtype.names else d.dtype.names[1]
+            frames[fid] = (np.asarray(d[wname]), np.asarray(d[fname]))
+
+        if brightest_frmid not in frames:
+            raise KeyError(
+                f"Brightest frame {brightest_frmid} not among CSVs in {csv_dir} "
+                f"(found {sorted(frames)})")
+
+        wv_b, fx_b = frames[brightest_frmid]
+        fx_b_s = smooth(fx_b, box_pts)
+
+        others = [fid for fid in frames if fid != brightest_frmid]
+        colors = palette if palette is not None else cls.OVERLAY_COLORS
+
+        # ---- figure -----------------------------------------------------------
+        fig, (ax_top, ax_bot) = plt.subplots(
+            2, 1, figsize=(10, 9),
+            gridspec_kw={'height_ratios': [1.4, 1.0]})
+
+        # ---- top: overlaid spectra -------------------------------------------
+        for i, fid in enumerate(others):
+            wv, fx = frames[fid]
+            ax_top.plot(wv, smooth(fx, box_pts),
+                        color=colors[i % len(colors)], lw=1.0,
+                        alpha=dim_alpha, zorder=2, label=f"{fid}")
+        ax_top.plot(wv_b, fx_b_s, color=bright_color, lw=2.5, alpha=1.0,
+                    zorder=5, label=f"{brightest_frmid}")
+
+        ax_top.set_xlim(*xlim)
+        ax_top.set_xlabel(r'Wavelength [$\AA$]')
+        ax_top.set_ylabel(r'Flux [erg s$^{-1}$ cm$^{-2}$ $\AA^{-1}$]')
+        ax_top.set_title(f'{visit}  -  all frames')
+        ax_top.grid(True, alpha=0.5)
+        ax_top.legend(fontsize=7, ncol=2, loc='upper right')
+
+        # ---- bottom: correlation vs brightest --------------------------------
+        band = (wv_b >= xlim[0]) & (wv_b <= xlim[1])
+        xb = fx_b_s[band]
+        for i, fid in enumerate(others):
+            wv, fx = frames[fid]
+            fx_s = smooth(fx, box_pts)
+            # align to the brightest wavelength grid if lengths differ
+            if fx_s.shape != fx_b_s.shape:
+                fx_s = np.interp(wv_b, wv, fx_s)
+            y = fx_s[band]
+            r = np.corrcoef(xb, y)[0, 1]
+            ax_bot.scatter(xb, y, s=6, color=colors[i % len(colors)],
+                           alpha=0.5, label=f"{fid}  (r={r:.3f})")
+
+        lo = min(xb.min(), 0)
+        hi = xb.max()
+        ax_bot.plot([lo, hi], [lo, hi], 'k--', lw=1.0, zorder=1,
+                    label='1:1')
+        ax_bot.set_xlabel(f'frmid {brightest_frmid} flux')
+        ax_bot.set_ylabel('Other-frame flux')
+        ax_bot.set_title('Correlation with brightest frame')
+        ax_bot.legend(fontsize=7, ncol=2, loc='upper left')
+
+        fig.suptitle(f'2025 Mars NUV Spectra with CUTE  -  {visit}',
+                     fontsize=13)
+        fig.tight_layout(rect=[0, 0, 1, 0.97])
+
+        if save:
+            os.makedirs(output_dir, exist_ok=True)
+            path = os.path.join(output_dir, f'{visit}_brightness_correlation.png')
+            fig.savefig(path, dpi=dpi)
+            print(f"Saved {path}")
+        if show:
+            plt.show()
+        else:
+            plt.close(fig)
+        return fig
 
     # --------- animations ---------
     @classmethod
@@ -773,7 +936,7 @@ class CuteObservation:
                                     box_pts, xlim, ylim, vmin, vmax)
             anims.append(anim)
             if save:
-                gif_path = os.path.join(output_dir, f"{visit}_{k}.gif")
+                gif_path = os.path.join(output_dir, f"{visit}_{k}{cls.fit_tag()}.gif")
                 anim.save(gif_path, writer=PillowWriter(fps=fps))
                 print(f"Saved {gif_path}")
 
@@ -925,7 +1088,7 @@ class CuteObservation:
         if save:
             if output_dir is None:
                 raise ValueError("save=True needs an output_dir")
-            path = os.path.join(output_dir, "grid_spectra.gif")
+            path = os.path.join(output_dir, f"grid_spectra{cls.fit_tag()}.gif")
             anim.save(path, writer=PillowWriter(fps=fps))
             print(f"Saved {path}")
         plt.show()
@@ -988,7 +1151,7 @@ class CuteObservation:
         if save:
             if output_dir is None:
                 raise ValueError("save=True needs an output_dir")
-            path = os.path.join(output_dir, "sequence_spectra.gif")
+            path = os.path.join(output_dir, f"sequence_spectra{cls.fit_tag()}.gif")
             anim.save(path, writer=PillowWriter(fps=fps))
             print(f"Saved {path}  ({len(seq)} frames)")
         plt.show()
