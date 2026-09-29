@@ -17,7 +17,7 @@ def _get_spectra_dir()->Path: # gets directory for Mars spectra
     except NameError:
         base_dir = Path.cwd()
 
-    spectra_dir = base_dir.parent / 'Mars_analysis_2026' / 'codes' / 'output' / 'Spectra'
+    spectra_dir = base_dir.parent / 'Mars_analysis_2026' / 'codes' / 'output' / 'Spectra' / 'Fixed_Trace'
 
     return spectra_dir
 
