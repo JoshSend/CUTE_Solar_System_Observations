@@ -37,11 +37,11 @@ SAVE = True
 
 # used by 'static' and 'visit':
 #   input visit folder name str
-VISIT = 'Visit3' # e.g. "Visit2" or "Visit3" or ...
+VISIT = 'Visit7' # e.g. "Visit2" or "Visit3" or ...
 
 # used by 'static':
 #   input file name str OR specific frame id as an int
-FILENAME = 4929
+FILENAME = 5150
 # e.g 4874 or 'cute_TRIM2D_scan_..._frmid_4874_..._midrows_55.fits' 
 
 # -----------------------------
@@ -72,6 +72,9 @@ OVERLAY_YLIM = None # True = autoscale y-lim
 # --- random ---
 box_pts = 15 # Boxcar smoothing for 1D spectra
 fps = 2 # Frames per second for gifs.
+CuteObservation.SCI_HALF = None # Half of science trace region. 
+                                # int for specified, none for adaptive.
+                                # recommended 8, but x<14
 
 # --- output directory ---
 output_dir = 'output'

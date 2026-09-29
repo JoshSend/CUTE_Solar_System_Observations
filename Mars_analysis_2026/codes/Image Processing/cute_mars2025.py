@@ -202,6 +202,7 @@ class CuteObservation:
     C = 2.99792458e+10          # cm / s
     N_SCI_PIX = 2048            # science pixels (excludes overscan)
     APERTURE = 1.4              # science half-height = APERATURE *(measured FWHM / 2)
+    SCI_HALF = None             # rows: set a number for fixed half-height. None = adaptive
     READ_NOISE = 3.6            # e- per pixel # PLACEHOLDER PLACEHOLDER PLACEHOLDER needs cute actual e- per pixel
 
     def __init__(
@@ -221,15 +222,24 @@ class CuteObservation:
         self.row_offset = 0.0
         self.trace_fwhm = 0.0
         self.sci_grow = 0.0
-        self._build_regions()                       # nominal fixed box
+        self._build_regions()                       # nominal box
         if track:
             self.row_offset, self.trace_fwhm = self._measure_trace_shape()
-            if widen and self.trace_fwhm > 0:       # widening now OFF by default
-                i_mid = len(self.xval) // 2
-                h0 = 0.5 * (self.yval2_sc[i_mid] - self.yval1_sc[i_mid])
-                half_target = self.APERTURE * (self.trace_fwhm / 2.0)
-                self.sci_grow = max(half_target - h0, 1 - h0)
-            self._build_regions(row_shift=self.row_offset, sci_grow=self.sci_grow)
+
+        # Pick the science half-height:
+        #   SCI_HALF set -> FIXED width (2*SCI_HALF rows), ignores FWHM
+        #   elif widen   -> adaptive, APERTURE * FWHM
+        #   else         -> nominal box height
+        i_mid = len(self.xval) // 2
+        h0 = 0.5 * (self.yval2_sc[i_mid] - self.yval1_sc[i_mid])   # nominal half-height
+        if self.SCI_HALF is not None:
+            target_half = self.SCI_HALF
+        elif widen and self.trace_fwhm > 0:
+            target_half = self.APERTURE * (self.trace_fwhm / 2.0)
+        else:
+            target_half = h0
+        self.sci_grow = max(target_half - h0, 1 - h0)      # never below ~1px
+        self._build_regions(row_shift=self.row_offset, sci_grow=self.sci_grow)
 
         self.spectra = self.extract_spectrum()
         self.flux = self._compute_flux()
@@ -272,8 +282,8 @@ class CuteObservation:
         y1_sc, y2_sc = 37 - 1 + s - g, 69 - 1 + s - g   # lower edge
         y3_sc, y4_sc = 59 - 1 + s + g, 88 - 1 + s + g   # upper edge
         # dark background (strip) edges, below trace
-        y1_dk, y2_dk = 7 - 1 + s, 39 - 1 + s
-        y3_dk, y4_dk = 29 - 1 + s, 58 - 1 + s
+        y1_dk, y2_dk = 7 - 1 + s - g, 39 - 1 + s - g
+        y3_dk, y4_dk = 29 - 1 + s + g, 58 - 1 + s + g
 
         x_left = nx - 1 - (52 - 1)        # flipped col of raw pixel 52
         x_right = nx - 1 - (2099 - 1)     # flipped col of raw pixel 2099
