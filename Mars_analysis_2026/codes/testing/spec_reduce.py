@@ -11,9 +11,10 @@ from specutils import Spectrum
 
 class CuteObservations:
     def __init__(self):
-        pass
+        self.base_dir = self._get_base_dir()
 
     def _get_base_dir(self):
+        # Acquire base directory for file
         try:
             base_dir = Path(__file__).parent
         except NameError:
