@@ -1,20 +1,6 @@
-Overlay all traces over the "highest flux" and fit to it
-*---*
-Trust the flux
-high flux = best pos of mars in slit
-8 panel figure
-
-Modify of the overlay grid so that the brightest
-frame is some noticeable color, and all other frames are alpha=0.5
-
-Two panel grid:
-top:  Flux(wv)
-bot: correlation (w/o factor applied) to brightest frame
-
-ultimately->
-apply scale factor based on corr to fit to brightest frame
-
-----
+Next Steps in image processing:
+    Remove solar spectra from reduced spectra
+    add resting chemical wv trackers (x=C lines with style '--')
 
 next processing: remove solar spectra from reduced;
 fun: add resting wvs for chems (hitran?)
