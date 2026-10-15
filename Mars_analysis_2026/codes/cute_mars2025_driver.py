@@ -8,6 +8,7 @@ Uses processing logic from cute_mars2025.py
 """
 
 import os
+import glob
 import sys
 import matplotlib.pyplot as plt
 
@@ -29,16 +30,20 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'grid'       : grid movie, one 1D-spectrum panel per visit in GRID_VISITS.
 #   'sequence'   : one 1D-spectrum panel that plays every frame of each visit
 #                  in turn, Visit1 -> ... -> Visit9.
-#   'bright'     : 
+#   'bright'     : Brightest frame plotting
 #   'bright_all' : 
+#   
+#   'solar'      : Solar overlay plotting
+#   'solar_all'  : 
 
-MODE = "sequence"
+MODE = "solar_all"
 
 # save figures/GIFs to the output folder
-SAVE = True
+SAVE = False
 
 FIT = True # Fit spectra to the brightest frame in each visit
-           # using least squares method.  
+FIT_METHOD = 'linear' # 'scale' | 'linear' | 'ratio' | 'median'
+FIT_WEIGHTED = False
 
 # used by 'static' and 'visit':
 #   input visit folder name str
@@ -92,10 +97,28 @@ if FIT:
 
 # ==============================================
 
+# --- solar overlay ---
+# Solar_spectra lives one level up from codes:  Mars_analysis_2026\Solar_spectra
+_DRIVER_DIR = os.path.dirname(os.path.abspath(__file__))        # ...\codes
+SOLAR_DIR   = os.path.abspath(os.path.join(_DRIVER_DIR, '..', 'Solar_spectra'))
+SOLAR_SCALE = 'auto'        # 'auto' or a float
+SOLAR_MODE  = 'common'
+# common      : convert to same units on log axis
+# twin        : each in their own units
+# scaled      : visual, scaled so that their magnitudes are the same. Just to see shapes, not physically relevant.
+# overlay     : both in same units, with reflected solar spectrum
+# reflectance : F_CUTE / F_reflected solar (solar-removed product)
+
 # brightest frame per visit
 BRIGHTEST = {
     'Visit1': 3739, 'Visit2': 4860, 'Visit3': 4926, 'Visit4': 4975,
     'Visit5': 5030, 'Visit7': 5145, 'Visit8': 5209, 'Visit9': 5260,
+}
+
+# Mars-Earth distance in AU
+MARS_EARTH_AU = {
+    'Visit1': 0.69, 'Visit2': 0.64, 'Visit3': 0.65, 'Visit4': 0.67,
+    'Visit5': 0.69, 'Visit7': 0.77, 'Visit8': 0.87, 'Visit9': 1.12,
 }
 
 def _brightness_csv(visit):
@@ -118,6 +141,9 @@ def _correlation_out(visit):
 def main():
     CuteObservation.FIT = FIT
     CuteObservation.FIT_TO = BRIGHTEST if FIT else None
+    CuteObservation.FIT_METHOD = FIT_METHOD
+    CuteObservation.FIT_WEIGHTED = FIT_WEIGHTED
+
     ref = CuteReference()
  
     if MODE == "static":
@@ -222,7 +248,36 @@ def main():
             out = _correlation_out(v) if SAVE else None
             CuteObservation.plot_brightness_correlation(
                 v, fid, csv_dir, save=SAVE, output_dir=out, show=not SAVE)
- 
+
+    elif MODE == 'solar':
+        csv_dir = _brightness_csv(VISIT)
+        hits = glob.glob(os.path.join(csv_dir, f"*frmid_{BRIGHTEST[VISIT]}*.csv"))
+        if not hits:
+            raise FileNotFoundError(f"no CUTE CSV for frmid {BRIGHTEST[VISIT]} in {csv_dir}")
+        solar_file = os.path.join(SOLAR_DIR, f"{VISIT.lower()}_solar_spectrum.csv")
+        if not os.path.exists(solar_file):
+            raise FileNotFoundError(f"no solar file: {solar_file}")
+        out = _get_output_dir(os.path.join(output_dir, 'solar_overlay')) if SAVE else None
+        CuteObservation.plot_mars_solar_overlay(
+            hits[0], solar_file, mars_earth_au=MARS_EARTH_AU[VISIT], mode=SOLAR_MODE,
+            title=f"{VISIT} frmid {BRIGHTEST[VISIT]}  -  Mars vs Solar Spectrum (TSIS)",
+            save=SAVE, output_dir=out,
+            fname=f"{VISIT.lower()}_solar_overlay.png", show=not SAVE)
+
+    elif MODE == 'solar_all':
+        for v, fid in BRIGHTEST.items():
+            csv_dir = _brightness_csv(v)
+            hits = glob.glob(os.path.join(csv_dir, f"*frmid_{fid}*.csv"))
+            solar_file = os.path.join(SOLAR_DIR, f"{v.lower()}_solar_spectrum.csv")
+            if not hits or not os.path.exists(solar_file):
+                print(f"  {v}: missing CUTE CSV or solar file, skipping")
+                continue
+            out = _get_output_dir(os.path.join(output_dir, 'solar_overlay')) if SAVE else None
+            CuteObservation.plot_mars_solar_overlay(
+                hits[0], solar_file, mars_earth_au=MARS_EARTH_AU[v], mode=SOLAR_MODE,
+                title=f"{v} frmid {fid}  -  Mars vs Solar Spectrum (TSIS)",
+                save=SAVE, output_dir=out,
+                fname=f"{v.lower()}_solar_overlay.png", show=not SAVE)
     else:
         raise ValueError(
             "MODE must be 'static', 'static_all', 'overlay', 'overlay_all', "

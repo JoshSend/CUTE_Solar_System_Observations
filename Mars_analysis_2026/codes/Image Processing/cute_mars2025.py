@@ -12,7 +12,8 @@ Based off previous processing logic written by dobh6980
 import os                            # file handling
 import glob                          # glob
 import numpy as np                   # computation
-from astropy.io import fits          # fit handling
+from astropy.io import fits          # fits handling
+from astropy.modeling import models, fitting # FITTING
 import matplotlib.pyplot as plt      # plotting
 import re
 
@@ -105,6 +106,31 @@ def smooth(y, box_pts):
     box = np.ones(box_pts) / box_pts
     y_smooth = np.convolve(y, box, mode="same")
     return y_smooth
+
+def _gsmooth(y, fwhm_pix):
+    """Gaussian-smooth y by a kernel of the given FWHM in pixels."""
+    sigma = max(fwhm_pix / 2.3548, 1e-6)
+    half = int(np.ceil(4 * sigma))
+    x = np.arange(-half, half + 1)
+    k = np.exp(-0.5 * (x / sigma) ** 2); k /= k.sum()
+    return np.convolve(y, k, mode='same')
+
+def _xcorr_shift(wave, a, b, max_lag_pix=40, cont_fwhm_pix=120.0):
+    """
+    Wavelength shift (Angstrom) that best aligns template `b` to spectrum `a`,
+    from a high-passed, integer-lag cross-correlation with parabolic refinement.
+    Apply as:  b_aligned = np.interp(wave - shift, wave, b)
+    """
+    hp = lambda y: np.nan_to_num(y - _gsmooth(y, cont_fwhm_pix))
+    A, B = hp(a), hp(b)
+    lags = np.arange(-max_lag_pix, max_lag_pix + 1)
+    cc = np.array([np.sum(A * np.roll(B, k)) for k in lags], float)
+    i = int(np.argmax(cc)); dpix = float(lags[i])
+    if 0 < i < len(cc) - 1:
+        y0, y1, y2 = cc[i-1], cc[i], cc[i+1]; den = y0 - 2*y1 + y2
+        if den != 0:
+            dpix = lags[i] + 0.5 * (y0 - y2) / den
+    return dpix * float(np.median(np.diff(wave)))
 
 # Hue order for per-frame overlays. Checked for colorblind separation against a
 # white page: worst adjacent pair dE 9.1 under protanopia, 19.6 normal vision.
@@ -215,10 +241,13 @@ class CuteObservation:
     READ_NOISE = 3.6            # e- per pixel # PLACEHOLDER PLACEHOLDER PLACEHOLDER needs cute actual e- per pixel
 
     # ---- fiting ----
-    FIT = False
-    FIT_TO = None
-    FIT_BAND = (2490,3250)
-    _bright_flux_cache = {}
+    FIT = False              # scale each frame's flux to its visit's brightest
+    FIT_TO = None            # {visit: brightest_frmid}
+    FIT_BAND = (2490, 3250)  # wavelength band the fit is computed over
+    FIT_METHOD = 'scale'     # 'scale' | 'linear' | 'ratio' | 'median'
+    FIT_WEIGHTED = True      # weight by the brightest frame's 1/sigma (chi^2 fit)
+    _bright_cache = {}       # visit -> (wave, flux, err), reduced once
+    _fit_scale_printed = set()
 
     def __init__(
         self, fits_fname, reference: CuteReference, visit=None, base_dir=None,
@@ -259,16 +288,19 @@ class CuteObservation:
         self.spectra = self.extract_spectrum()
         self.flux = self._compute_flux()
 
-        self.fit_scale = 1.0
+        self.fit_scale, self.fit_label = 1.0, ''
         if self.FIT and self.FIT_TO and self.visit in self.FIT_TO:
-            self.fit_scale = self._fit_to_brightest()
-            self.flux = self.flux * self.fit_scale
+            self.flux, self.fit_scale, self.fit_label = self._fit_to_brightest()
             self.flux_err = self.flux_err * self.fit_scale
+            key = (self.visit, self.frame_id)
+            if key not in type(self)._fit_scale_printed:
+                type(self)._fit_scale_printed.add(key)
+                print(f"  {self.visit} frmid {self.frame_id}: {self.fit_label}")
 
     @classmethod
     def fit_tag(cls):
-        """'_FIT' when fitting is on, else '' -- appended to saved filenames."""
-        return '_FIT' if cls.FIT else ''
+        """'_FIT-<method>' when fitting is on, else ''."""
+        return f'_FIT-{cls.FIT_METHOD}' if cls.FIT else ''
 
     def _load_image(self):
         with fits.open(self.fits_fname) as fits_file:
@@ -412,38 +444,63 @@ class CuteObservation:
 
     def _fit_to_brightest(self):
         """
-        Least-squares scale a (through the origin) so that a*flux best matches
-        the visit's brightest frame over FIT_BAND:  a = sum(f_b*f_o)/sum(f_o^2).
-        The brightest frame is its own reference and returns 1.0.
+        Fit so that brightest ~ f(other) over FIT_BAND, then apply f to this
+        frame's full flux. Returns (fitted_flux, slope, label). Method is
+        chosen by FIT_METHOD, so swapping estimators is a one-word change.
+            'scale'  : a*x            (Linear1D, intercept fixed at 0)
+            'linear' : a*x + b        (Linear1D, free intercept -- absorbs bkg offset)
+            'ratio'  : a = sum/sum    (integrated-flux ratio)
+            'median' : a = median(x_b/x_o)  (robust per-pixel ratio)
         """
         try:
             fid = int(self.frame_id)
         except (TypeError, ValueError):
-            return 1.0
+            return self.flux, 1.0, 'skip'
         if fid == int(self.FIT_TO[self.visit]):
-            return 1.0
+            return self.flux, 1.0, 'reference'
 
-        wv_b, fx_b = self._get_bright_flux()
+        wv_b, fx_b, er_b = self._get_bright_flux()
         wave = self.reference.wv_soln
         lo, hi = self.FIT_BAND
         band = (wave >= lo) & (wave <= hi)
-        fo, fb = self.flux[band], fx_b[band]
-        denom = float(np.sum(fo * fo))
-        return float(np.sum(fb * fo) / denom) if denom > 0 else 1.0
+        xo, yb = self.flux[band], fx_b[band]
+
+        # astropy convention: weight = 1/sigma  ->  minimizes chi^2
+        w = None
+        if self.FIT_WEIGHTED:
+            w = 1.0 / np.clip(er_b[band], 1e-30, None)
+
+        method = self.FIT_METHOD
+        if method in ('scale', 'linear'):
+            fixed = {'intercept': True} if method == 'scale' else {}
+            m0 = models.Linear1D(slope=1.0, intercept=0.0, fixed=fixed)
+            m = fitting.LinearLSQFitter()(m0, xo, yb, weights=w)
+            a, b = float(m.slope.value), float(m.intercept.value)
+        elif method == 'ratio':
+            a, b = float(np.sum(yb) / np.sum(xo)), 0.0
+        elif method == 'median':
+            good = xo > np.nanmax(xo) * 0.05          # ignore the noise floor
+            a, b = float(np.nanmedian(yb[good] / xo[good])), 0.0
+        else:
+            raise ValueError(f"unknown FIT_METHOD {method!r}")
+
+        fitted = a * self.flux + b
+        label = f"{method}: a={a:.4f}" + (f", b={b:+.4g}" if b else "")
+        return fitted, a, label
 
     def _get_bright_flux(self):
-        """(wave, flux) of this visit's brightest frame -- reduced once, then cached."""
-        if self.visit not in self._bright_flux_cache:
+        """(wave, flux, err) of this visit's brightest frame -- reduced once, cached."""
+        if self.visit not in self._bright_cache:
             folder = os.path.join(_get_observations_dir(), self.visit)
             path = _resolve_frame(folder, int(self.FIT_TO[self.visit]))
             saved = type(self).FIT
-            type(self).FIT = False            # reduce the reference WITHOUT fitting -> no recursion
+            type(self).FIT = False            # reduce reference WITHOUT fitting -> no recursion
             try:
                 b = type(self)(path, self.reference, visit=self.visit)
             finally:
                 type(self).FIT = saved
-            self._bright_flux_cache[self.visit] = (b.reference.wv_soln, b.flux)
-        return self._bright_flux_cache[self.visit]
+            self._bright_cache[self.visit] = (b.reference.wv_soln, b.flux, b.flux_err)
+        return self._bright_cache[self.visit]
 
     # --------- outputs ---------
     def _extract_frame_id(self):
@@ -630,6 +687,155 @@ class CuteObservation:
         print(f"Done: {total} PNG(s) across {len(results)} visit(s) "
               f"-> {output_root}")
         return results
+
+    @classmethod
+    def plot_mars_solar_overlay(cls, cute_csv, solar_file, mars_earth_au=1.63,
+                                mars_sun_au=None, solar_wave_unit='nm',
+                                solar_delimiter=',', mode='overlay', scale='auto',
+                                match_resolution=True, solar_fwhm_A=10.0,
+                                align=True, max_lag_pix=40, box_pts=15,
+                                xlim=(2490, 3250), title=None, save=False,
+                                output_dir=None, fname="mars_solar_overlay.png",
+                                dpi=200, show=True):
+        """
+        Overplot a CUTE Mars spectrum and the reflected solar spectrum, with the
+        full reflected-light geometry applied so the two are directly comparable.
+
+        mode 'reflectance' returns F_obs/F_pred = p*Phi, after:
+          match_resolution : convolve CUTE down to the solar FWHM (solar_fwhm_A, A)
+                             so sharp solar lines don't ring in the ratio.
+          align            : cross-correlate and shift the solar onto CUTE's
+                             wavelength scale (removes derivative spikes at lines).
+        See earlier docstring for mars_earth_au / mars_sun_au geometry.
+        """
+        R_MARS_AU = 2.2659e-5     # Mars radius in AU
+        W_TO_CGS  = 100.0         # 1 W/m^2/nm = 100 erg/s/cm^2/A
+        CUTE_UNIT = 1e-9          # CUTE flux stored in units of 1e-9 erg/s/cm^2/A
+        solar_c   = 'royalblue'
+
+        # --- CUTE spectrum (1e-9 erg/s/cm^2/A) ---
+        d = np.genfromtxt(cute_csv, delimiter=',', names=True)
+        nm = d.dtype.names
+        cw = np.asarray(d['wave'] if 'wave' in nm else d[nm[0]], float)
+        cf = np.asarray(d['flux'] if 'flux' in nm else d[nm[1]], float)
+        cf_s = smooth(cf, box_pts)
+
+        # --- solar -> "at Mars" (W/m^2/nm) ---
+        s = np.atleast_2d(np.genfromtxt(solar_file, delimiter=solar_delimiter,
+                                        comments='#'))
+        sw = s[:, 0].astype(float)
+        if mars_sun_au is not None:
+            col = 2 if s.shape[1] > 2 else 1
+            solar_at_mars = s[:, col].astype(float) / float(mars_sun_au) ** 2
+        else:
+            solar_at_mars = s[:, 1].astype(float)
+        if str(solar_wave_unit).lower().startswith('nm'):
+            sw = sw * 10.0
+        o = np.argsort(sw); sw, solar_at_mars = sw[o], solar_at_mars[o]
+
+        # --- predicted reflected flux at Earth (albedo = 1), in 1e-9 cgs units ---
+        solar_pred_disp = None
+        if mars_earth_au is not None:
+            dilution = (R_MARS_AU / float(mars_earth_au)) ** 2
+            solar_pred_disp = solar_at_mars * dilution * W_TO_CGS / CUTE_UNIT
+
+        lo, hi = xlim
+        cb = (cw >= lo) & (cw <= hi)
+
+        fig, ax = plt.subplots(figsize=(11, 5))
+        ax.set_xlim(xlim); ax.set_xlabel(r"Wavelength ($\AA$)")
+        ax.grid(True, ls='--', lw=0.6, alpha=0.6)
+
+        if mode == 'overlay':
+            if solar_pred_disp is None:
+                raise ValueError("mode='overlay' needs mars_earth_au")
+            l1, = ax.plot(cw, cf_s, color='maroon', lw=1.6,
+                          label='CUTE Mars (observed)', zorder=3)
+            l2, = ax.plot(sw, solar_pred_disp, color=solar_c, lw=1.4, alpha=0.9,
+                          label='Solar reflected (albedo = 1)', zorder=2)
+            ax.set_ylabel(r"Flux ($10^{-9}$ erg s$^{-1}$ cm$^{-2}$ $\AA^{-1}$)")
+            ax.legend(handles=[l1, l2], loc='upper right', fontsize=9)
+
+        elif mode == 'reflectance':
+            if solar_pred_disp is None:
+                raise ValueError("mode='reflectance' needs mars_earth_au")
+            dl = float(np.median(np.diff(cw)))
+            if match_resolution:
+                fwhm_pix = solar_fwhm_A / dl
+                cute_m = _gsmooth(cf, fwhm_pix)          # CUTE -> solar resolution
+            else:
+                fwhm_pix = float(box_pts); cute_m = cf_s
+            solar_on_cw = np.interp(cw, sw, solar_pred_disp)
+            sh = 0.0
+            if align:
+                sh = _xcorr_shift(cw, cute_m, solar_on_cw, max_lag_pix)
+                solar_on_cw = np.interp(cw - sh, cw, solar_on_cw)
+            with np.errstate(divide='ignore', invalid='ignore'):
+                refl = cute_m / solar_on_cw
+            m = int(np.ceil(1.5 * fwhm_pix))             # mask convolution edges
+            if m > 0:
+                refl[:m] = np.nan; refl[-m:] = np.nan
+            ax.plot(cw, refl, color='maroon', lw=1.4, label='Reflectance (I/F)')
+            ax.set_ylabel(r"Reflectance  $F_{\rm obs}/F_{\rm pred}$  ($p\,\Phi$)")
+            good = cb & np.isfinite(refl)
+            if good.any():
+                med = float(np.nanmedian(refl[good]))
+                ax.set_ylim(0, 3 * med)
+                print(f"  reflectance: median in band = {med:.4f}"
+                      + (f", solar shift = {sh:+.2f} A" if align else ""))
+            ax.legend(loc='upper right', fontsize=9)
+
+        elif mode == 'twin':
+            l1, = ax.plot(cw, cf_s, color='maroon', lw=1.6, label='CUTE Mars', zorder=3)
+            ax.set_ylabel(r"CUTE flux ($10^{-9}$ erg s$^{-1}$ cm$^{-2}$ $\AA^{-1}$)")
+            ax2 = ax.twinx()
+            l2, = ax2.plot(sw, solar_at_mars, color=solar_c, lw=1.4, alpha=0.9,
+                           label='Solar (at Mars)', zorder=2)
+            ax2.set_ylabel('Solar irradiance at Mars (W m$^{-2}$ nm$^{-1}$)')
+            ax.legend(handles=[l1, l2], loc='upper right', fontsize=9)
+
+        elif mode == 'common':
+            # CUTE and the Sun->Mars solar, both in absolute erg/s/cm^2/A, on a
+            # log axis (they differ by ~1e10). No scaling factor.
+            cute_abs  = cf_s * CUTE_UNIT
+            solar_abs = solar_at_mars * W_TO_CGS
+            l1, = ax.plot(cw, cute_abs, color='maroon', lw=1.6,
+                          label='CUTE Mars (observed)', zorder=3)
+            l2, = ax.plot(sw, solar_abs, color=solar_c, lw=1.4, alpha=0.9,
+                          label='Solar (at Mars)', zorder=2)
+            ax.set_yscale('log')
+            ax.set_ylabel(r"Flux / irradiance (erg s$^{-1}$ cm$^{-2}$ $\AA^{-1}$)")
+            ax.legend(handles=[l1, l2], loc='center right', fontsize=9)
+
+        elif mode == 'scaled':
+            l1, = ax.plot(cw, cf_s, color='maroon', lw=1.6, label='CUTE Mars', zorder=3)
+            ax.set_ylabel(r"CUTE flux ($10^{-9}$ erg s$^{-1}$ cm$^{-2}$ $\AA^{-1}$)")
+            sb = (sw >= lo) & (sw <= hi)
+            a = (float(np.nanmedian(cf_s[cb]) / np.nanmedian(solar_at_mars[sb]))
+                 if scale == 'auto' else float(scale))
+            l2, = ax.plot(sw, solar_at_mars * a, color=solar_c, lw=1.4, alpha=0.9,
+                          label=f'Solar (at Mars)  x {a:.3g}', zorder=2)
+            print(f"  solar scale factor = {a:.4g}")
+            ax.legend(handles=[l1, l2], loc='upper right', fontsize=9)
+
+        else:
+            raise ValueError(
+                f"unknown mode {mode!r} -- use 'overlay', 'scaled', 'twin', "
+                "'common', or 'reflectance'")
+
+        ax.set_title(title or "CUTE Mars vs solar spectrum")
+        fig.tight_layout()
+
+        if save:
+            if output_dir is None:
+                raise ValueError("save=True needs an output_dir")
+            os.makedirs(output_dir, exist_ok=True)
+            path = os.path.join(output_dir, fname)
+            fig.savefig(path, dpi=dpi, bbox_inches='tight')
+            print(f"Saved {path}")
+        if show:
+            plt.show()
+        return fig, ax
 
     # --------- frame-to-frame comparison ---------
     @classmethod
