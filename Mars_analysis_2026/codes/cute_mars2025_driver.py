@@ -35,6 +35,7 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   
 #   'solar'      : Solar overlay plotting
 #   'solar_all'  : 
+#   'reflect_all': Cross-visit solar reflectance
 
 MODE = "solar_all"
 
@@ -79,6 +80,15 @@ STATIC_ALL_VMAX = None # Flux range max
 OVERLAY_PALETTE = None # colormap
 OVERLAY_YLIM = None # True = autoscale y-lim
 
+# --- 'solar' and 'solar_all' options ---
+SOLAR_SCALE = 'auto'        # 'auto' or a float
+SOLAR_MODE  = 'reflectance'
+# common      : convert to same units on log axis
+# twin        : each in their own units
+# scaled      : visual, scaled so that their magnitudes are the same. Just to see shapes, not physically relevant.
+# overlay     : both in same units, with reflected solar spectrum
+# reflectance : F_CUTE / F_reflected solar (solar-removed product)
+
 # --- random ---
 box_pts = 15 # Boxcar smoothing for 1D spectra
 fps = 2 # Frames per second for gifs.
@@ -95,19 +105,12 @@ CORR_SUBDIR = 'Correlation'
 if FIT:
     VISIT_SUBDIR = ALL_VISITS_SUBDIR = 'Spectra_fit'
 
-# ==============================================
-
-# --- solar overlay ---
+# --- solar overlay directories ---
 # Solar_spectra lives one level up from codes:  Mars_analysis_2026\Solar_spectra
 _DRIVER_DIR = os.path.dirname(os.path.abspath(__file__))        # ...\codes
 SOLAR_DIR   = os.path.abspath(os.path.join(_DRIVER_DIR, '..', 'Solar_spectra'))
-SOLAR_SCALE = 'auto'        # 'auto' or a float
-SOLAR_MODE  = 'common'
-# common      : convert to same units on log axis
-# twin        : each in their own units
-# scaled      : visual, scaled so that their magnitudes are the same. Just to see shapes, not physically relevant.
-# overlay     : both in same units, with reflected solar spectrum
-# reflectance : F_CUTE / F_reflected solar (solar-removed product)
+
+# ==============================================
 
 # brightest frame per visit
 BRIGHTEST = {
@@ -278,6 +281,19 @@ def main():
                 title=f"{v} frmid {fid}  -  Mars vs Solar Spectrum (TSIS)",
                 save=SAVE, output_dir=out,
                 fname=f"{v.lower()}_solar_overlay.png", show=not SAVE)
+
+    elif MODE == 'reflect_all':
+        items = []
+        for v, fid in BRIGHTEST.items():
+            hits = glob.glob(os.path.join(_brightness_csv(v), f"*frmid_{fid}*.csv"))
+            sf = os.path.join(SOLAR_DIR, f"{v.lower()}_solar_spectrum.csv")
+            if hits and os.path.exists(sf):
+                items.append((v, hits[0], sf, MARS_EARTH_AU[v]))
+            else:
+                print(f"  {v}: missing CUTE CSV or solar file, skipping")
+        out = _get_output_dir(os.path.join(output_dir, 'solar_overlay')) if SAVE else None
+        CuteObservation.plot_reflectance_all(items, save=SAVE, output_dir=out, show=not SAVE)
+
     else:
         raise ValueError(
             "MODE must be 'static', 'static_all', 'overlay', 'overlay_all', "

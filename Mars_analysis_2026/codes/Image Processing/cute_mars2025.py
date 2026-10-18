@@ -115,6 +115,23 @@ def _gsmooth(y, fwhm_pix):
     k = np.exp(-0.5 * (x / sigma) ** 2); k /= k.sum()
     return np.convolve(y, k, mode='same')
 
+def _degrade_to_R(wave, flux, R_from, R_to):
+    """
+    Convolve a spectrum from resolving power R_from down to R_to (R_to < R_from),
+    with a wavelength-dependent kernel (constant R = constant width in ln-lambda).
+    Returns flux unchanged if R_to >= R_from.
+    """
+    flux = np.asarray(flux, float)
+    if R_to >= R_from:
+        return flux.copy()
+    lnw = np.log(wave)
+    lnu = np.linspace(lnw[0], lnw[-1], len(wave))      # uniform ln-lambda grid
+    dln = lnu[1] - lnu[0]
+    fu = np.interp(lnu, lnw, flux)
+    fwhm_lnw = np.sqrt((1.0 / R_to) ** 2 - (1.0 / R_from) ** 2)   # added width
+    fs = _gsmooth(fu, fwhm_lnw / dln)
+    return np.interp(lnw, lnu, fs)
+
 def _xcorr_shift(wave, a, b, max_lag_pix=40, cont_fwhm_pix=120.0):
     """
     Wavelength shift (Angstrom) that best aligns template `b` to spectrum `a`,
@@ -689,10 +706,72 @@ class CuteObservation:
         return results
 
     @classmethod
-    def plot_mars_solar_overlay(cls, cute_csv, solar_file, mars_earth_au=1.63,
+    def reflectance_curve(cls, cute_csv, solar_file, mars_earth_au,
+                          mars_sun_au=None, solar_wave_unit='nm',
+                          solar_delimiter=',', match_resolution=True,
+                          R_cute=700.0, R_tsis=300.0, align=True,
+                          max_lag_pix=40, xlim=(2490, 3250)):
+        """(wave, reflectance p*Phi, solar_shift_A) -- no plotting."""
+        R_MARS_AU, W_TO_CGS, CUTE_UNIT = 2.2659e-5, 100.0, 1e-9
+        d = np.genfromtxt(cute_csv, delimiter=',', names=True)
+        nmn = d.dtype.names
+        cw = np.asarray(d['wave'] if 'wave' in nmn else d[nmn[0]], float)
+        cf = np.asarray(d['flux'] if 'flux' in nmn else d[nmn[1]], float)
+        s = np.atleast_2d(np.genfromtxt(solar_file, delimiter=solar_delimiter, comments='#'))
+        sw = s[:, 0].astype(float)
+        if mars_sun_au is not None:
+            col = 2 if s.shape[1] > 2 else 1
+            solar_at_mars = s[:, col].astype(float) / float(mars_sun_au) ** 2
+        else:
+            solar_at_mars = s[:, 1].astype(float)
+        if str(solar_wave_unit).lower().startswith('nm'):
+            sw = sw * 10.0
+        o = np.argsort(sw); sw, solar_at_mars = sw[o], solar_at_mars[o]
+        solar_pred = solar_at_mars * (R_MARS_AU / float(mars_earth_au)) ** 2 * W_TO_CGS / CUTE_UNIT
+        cute_m = _degrade_to_R(cw, cf, R_cute, R_tsis) if match_resolution else smooth(cf, 15)
+        solar_on_cw = np.interp(cw, sw, solar_pred)
+        sh = 0.0
+        if align:
+            sh = _xcorr_shift(cw, cute_m, solar_on_cw, max_lag_pix)
+            solar_on_cw = np.interp(cw - sh, cw, solar_on_cw)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            refl = cute_m / solar_on_cw
+        fwhm_pix = (np.median(cw) / R_tsis) / float(np.median(np.diff(cw)))
+        m = int(np.ceil(1.5 * fwhm_pix))
+        if m > 0:
+            refl[:m] = np.nan; refl[-m:] = np.nan
+        return cw, refl, sh
+
+    @classmethod
+    def plot_reflectance_all(cls, items, xlim=(2490, 3250), ymax=0.12,
+                             save=False, output_dir=None,
+                             fname='reflectance_all.png', dpi=200, show=True):
+        """items: list of (label, cute_csv, solar_file, mars_earth_au)."""
+        cmap = plt.colormaps.get_cmap('tab10')
+        fig, ax = plt.subplots(figsize=(11, 5))
+        for i, (label, cc, sf, dae) in enumerate(items):
+            cw, refl, sh = cls.reflectance_curve(cc, sf, dae, xlim=xlim)
+            ax.plot(cw, refl, color=cmap(i % 10), lw=1.1, alpha=0.9,
+                    label=f"{label}  (shift {sh:+.1f} A)")
+        ax.set_xlim(xlim); ax.set_ylim(0, ymax)
+        ax.set_xlabel(r"Wavelength ($\AA$)")
+        ax.set_ylabel(r"Reflectance  $p\,\Phi$")
+        ax.set_title("Mars reflectance -- all visits")
+        ax.grid(True, ls='--', lw=0.6, alpha=0.6)
+        ax.legend(fontsize=8, ncol=2, loc='upper right')
+        fig.tight_layout()
+        if save:
+            os.makedirs(output_dir, exist_ok=True)
+            fig.savefig(os.path.join(output_dir, fname), dpi=dpi, bbox_inches='tight')
+        if show:
+            plt.show()
+        return fig, ax
+
+    @classmethod
+    def plot_mars_solar_overlay(cls, cute_csv, solar_file, mars_earth_au=None,
                                 mars_sun_au=None, solar_wave_unit='nm',
                                 solar_delimiter=',', mode='overlay', scale='auto',
-                                match_resolution=True, solar_fwhm_A=10.0,
+                                match_resolution=True, R_cute=700.0, R_tsis=300.0,
                                 align=True, max_lag_pix=40, box_pts=15,
                                 xlim=(2490, 3250), title=None, save=False,
                                 output_dir=None, fname="mars_solar_overlay.png",
@@ -759,31 +838,54 @@ class CuteObservation:
         elif mode == 'reflectance':
             if solar_pred_disp is None:
                 raise ValueError("mode='reflectance' needs mars_earth_au")
-            dl = float(np.median(np.diff(cw)))
-            if match_resolution:
-                fwhm_pix = solar_fwhm_A / dl
-                cute_m = _gsmooth(cf, fwhm_pix)          # CUTE -> solar resolution
-            else:
-                fwhm_pix = float(box_pts); cute_m = cf_s
+            plt.close(fig)                      # discard shared axis; use 2 panels
+            cute_m = _degrade_to_R(cw, cf, R_cute, R_tsis) if match_resolution else cf_s
             solar_on_cw = np.interp(cw, sw, solar_pred_disp)
             sh = 0.0
             if align:
                 sh = _xcorr_shift(cw, cute_m, solar_on_cw, max_lag_pix)
                 solar_on_cw = np.interp(cw - sh, cw, solar_on_cw)
+
             with np.errstate(divide='ignore', invalid='ignore'):
-                refl = cute_m / solar_on_cw
-            m = int(np.ceil(1.5 * fwhm_pix))             # mask convolution edges
-            if m > 0:
-                refl[:m] = np.nan; refl[-m:] = np.nan
-            ax.plot(cw, refl, color='maroon', lw=1.4, label='Reflectance (I/F)')
-            ax.set_ylabel(r"Reflectance  $F_{\rm obs}/F_{\rm pred}$  ($p\,\Phi$)")
+                refl = cute_m / solar_on_cw                      # division: p*Phi
+            band = cb & np.isfinite(solar_on_cw) & np.isfinite(cute_m)
+            a = float(np.sum(cute_m[band] * solar_on_cw[band]) /
+                      np.sum(solar_on_cw[band] ** 2))            # best-fit albedo
+            resid = cute_m - a * solar_on_cw                     # subtraction
+
+            fig, (axr, axs) = plt.subplots(2, 1, figsize=(11, 8), sharex=True)
+            axr.plot(cw, refl, color='maroon', lw=1.4, label='Reflectance (I/F)')
+            axr.set_ylabel(r"Reflectance  $p\,\Phi$")
+            axr.set_title(r"Division:  $F_{\rm CUTE}/F_{\rm pred}$")
             good = cb & np.isfinite(refl)
             if good.any():
-                med = float(np.nanmedian(refl[good]))
-                ax.set_ylim(0, 3 * med)
-                print(f"  reflectance: median in band = {med:.4f}"
-                      + (f", solar shift = {sh:+.2f} A" if align else ""))
-            ax.legend(loc='upper right', fontsize=9)
+                med = float(np.nanmedian(refl[good])); axr.set_ylim(0, 3 * med)
+                print(f"  reflectance median = {med:.4f}, albedo scale a = {a:.4f}"
+                      f", solar shift = {sh:+.2f} A")
+            axr.grid(True, ls='--', lw=0.6, alpha=0.6)
+            axr.legend(loc='upper right', fontsize=9)
+
+            axs.plot(cw, resid, color='teal', lw=1.2, label=f'CUTE - {a:.3g}×solar')
+            axs.axhline(0, color='k', lw=0.8, alpha=0.6)
+            axs.set_ylabel(r"Residual ($10^{-9}$ erg s$^{-1}$ cm$^{-2}$ $\AA^{-1}$)")
+            axs.set_xlabel(r"Wavelength ($\AA$)")
+            axs.set_title(r"Subtraction:  $F_{\rm CUTE} - a\,F_{\rm pred}$")
+            axs.set_xlim(xlim)
+            axs.grid(True, ls='--', lw=0.6, alpha=0.6)
+            axs.legend(loc='upper right', fontsize=9)
+
+            fig.suptitle(title or "CUTE Mars reflectance", fontsize=12)
+            fig.tight_layout(rect=[0, 0, 1, 0.98])
+            if save:
+                if output_dir is None:
+                    raise ValueError("save=True needs an output_dir")
+                os.makedirs(output_dir, exist_ok=True)
+                path = os.path.join(output_dir, fname)
+                fig.savefig(path, dpi=dpi, bbox_inches='tight')
+                print(f"Saved {path}")
+            if show:
+                plt.show()
+            return fig, (axr, axs)
 
         elif mode == 'twin':
             l1, = ax.plot(cw, cf_s, color='maroon', lw=1.6, label='CUTE Mars', zorder=3)
