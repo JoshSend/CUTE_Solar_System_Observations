@@ -30,6 +30,7 @@ from astropy.time import Time
 from scipy.optimize import brentq
 from sunpy.coordinates import get_body_heliographic_stonyhurst, HeliographicCarrington
 import requests
+from scipy.ndimage import median_filter
 
 _trap = getattr(np, 'trapezoid', np.trapz)   # band integral, NumPy-version safe
 

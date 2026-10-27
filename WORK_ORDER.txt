@@ -1,8 +1,7 @@
 integrated Solar Flux @ Mars
+% change from 290nm to 330nm
 
 EUVM -> FISM2 -> TSIS-HSRS
 to get date for TSIS-HSRS
 
 Multi-lin reg. fitting conti.
-
-% change from 290nm to 330nm

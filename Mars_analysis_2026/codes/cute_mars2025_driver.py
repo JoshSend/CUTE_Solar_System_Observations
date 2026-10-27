@@ -38,8 +38,9 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'solar_all'  : 
 #   'solar_grid' :
 #   'reflect_all': Cross-visit solar reflectance
+#   'solar_diff' :
 
-MODE = "solar_all"
+MODE = "solar_diff"
 
 # save figures/GIFs to the output folder
 SAVE = False
@@ -329,6 +330,21 @@ def main():
                 print(f"  {v}: missing CUTE CSV or solar file, skipping")
         out = _get_output_dir(os.path.join(output_dir, 'solar_overlay')) if SAVE else None
         CuteObservation.plot_reflectance_grid(items, save=SAVE, output_dir=out, show=not SAVE)
+
+    elif MODE == 'solar_diff':
+        items = []
+        for v, fid in BRIGHTEST.items():
+            hits = glob.glob(os.path.join(_brightness_csv(v), f"*frmid_{fid}*.csv"))
+            sf = os.path.join(SOLAR_DIR, f"{v.lower()}_solar_spectrum.csv")
+            if hits and os.path.exists(sf):
+                fsl = _f_slit_for(v, fid)
+                items.append((v, hits[0], sf, MARS_EARTH_AU[v], PHASE_ANGLE[v], fsl))
+            else:
+                print(f"  {v}: missing CUTE CSV or solar file, skipping")
+        out = _get_output_dir(os.path.join(output_dir, 'solar_percent_diff')) if SAVE else None
+        CuteObservation.plot_solar_percent_diff(
+            items, ref_label='Visit1',
+            save=SAVE, output_dir=out, show=not SAVE)
 
     else:
         raise ValueError(

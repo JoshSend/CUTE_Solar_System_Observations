@@ -1081,6 +1081,119 @@ class CuteObservation:
             plt.show()
         return fig, ax
 
+    @classmethod
+    def plot_solar_percent_diff(cls, items, ref_label='visit1',
+                                wmin=2900.0, wmax=3300.0, grid_A=1.0, smooth_A=10,
+                                band_nm=(248.0, 330.6), figsize=(9, 11),
+                                save=False, output_dir=None, dpi=200, show=True,
+                                **refl_kw):
+        """
+        Three stacked panels (no titles):
+          1. integrated solar flux at Mars per visit  (scatter + faint best-fit)
+          2. geometric-albedo (I/F) % difference from `ref_label`, 2900-3300 A
+          3. solar-flux-at-Mars  % difference from `ref_label`, 2900-3300 A
+
+        `items`: the same 6-tuples used by the grid mode --
+                 (label, cute_csv, solar_file, mars_earth_au, phase_angle, f_slit)
+        Panels 2 & 3 interpolate every visit onto a common grid and reference V1.
+        Comparing them is the diagnostic: if the albedo %diff tracks the solar
+        %diff, the visit-to-visit change is residual solar; if the albedo is flat
+        while the solar varies, the reduction removed the solar cleanly.
+        """
+        import re
+        import numpy as np
+        import matplotlib.pyplot as plt
+        trap = np.trapezoid if hasattr(np, 'trapezoid') else np.trapz
+
+        def vnum(lbl):
+            m = re.search(r'(\d+)', str(lbl))
+            return int(m.group(1)) if m else -1
+
+        def gsmooth(y, sig):
+            if sig <= 0:
+                return y
+            n = int(np.ceil(4 * sig))
+            k = np.exp(-0.5 * (np.arange(-n, n + 1) / sig) ** 2); k /= k.sum()
+            return np.convolve(y, k, mode='same')
+
+        items = sorted(items, key=lambda it: vnum(it[0]))
+        labels = [it[0] for it in items]
+        vnums = [vnum(l) for l in labels]
+        ref_i = labels.index(ref_label) if ref_label in labels else 0
+        #colors = plt.cm.viridis(np.linspace(0, 0.92, len(items)))
+        _PALETTE = ['#4477AA', '#EE6677', '#228833', '#AA3377', '#EE7733',
+                    '#009988', '#CCBB44', '#000000', '#999999', '#882255']
+        colors = [_PALETTE[i % len(_PALETTE)] for i in range(len(items))]
+        cw_g = np.arange(wmin, wmax + grid_A, grid_A)
+        sig = (smooth_A / 2.3548) / grid_A
+
+        # panel 1: integrated flux at Mars
+        integ = []
+        for (_lab, _cc, solar_file, _mea, _pa, _fs) in items:
+            d = np.genfromtxt(solar_file, delimiter=',', comments='#')
+            wl, irr = d[:, 0], d[:, 1]                      # nm, W/m^2/nm at Mars
+            m = (wl >= band_nm[0]) & (wl <= band_nm[1]) & np.isfinite(irr)
+            integ.append(trap(irr[m], wl[m]))
+        integ = np.array(integ)
+
+        # panel 2: geometric-albedo %diff
+        alb = []
+        for (label, cute_csv, solar_file, mea, pa, fs) in items:
+            cw, refl, *_ = cls.reflectance_curve(cute_csv, solar_file, mea,
+                                                 phase_angle=pa, f_slit=fs, **refl_kw)
+            alb.append(gsmooth(np.interp(cw_g, cw, refl), sig))
+        alb = np.array(alb)
+        alb_pd = (alb - alb[ref_i]) / alb[ref_i] * 100.0
+
+        # panel 3: solar-at-Mars %diff
+        sol = []
+        for (_lab, _cc, solar_file, _mea, _pa, _fs) in items:
+            d = np.genfromtxt(solar_file, delimiter=',', comments='#')
+            sol.append(np.interp(cw_g, d[:, 0] * 10.0, d[:, 1]))   # nm->A, at Mars
+        sol = np.array(sol)
+        sol_pd = (sol - sol[ref_i]) / sol[ref_i] * 100.0
+
+        fig, ax = plt.subplots(3, 1, figsize=figsize)
+
+        ax[0].scatter(vnums, integ, c=colors, s=55, zorder=3, edgecolor='k', lw=0.4)
+        cfit = np.polyfit(vnums, integ, 1)
+        xx = np.linspace(min(vnums), max(vnums), 50)
+        ax[0].plot(xx, np.polyval(cfit, xx), color='gray', lw=1.0, alpha=0.35, zorder=1)
+        ax[0].set_xlabel('visit number')
+        ax[0].set_ylabel(r'integrated flux at Mars (W m$^{-2}$)')
+        ax[0].set_xticks(vnums)
+        ax[0].grid(True, ls='--', lw=0.5, alpha=0.5)
+
+        for i, label in enumerate(labels):
+            if i == ref_i:
+                continue
+            ax[1].plot(cw_g, alb_pd[i], color=colors[i], lw=1.1, label=label)
+        ax[1].axhline(0, color='k', lw=0.8, alpha=0.4)
+        ax[1].set_xlim(wmin, wmax)
+        ax[1].set_xlabel(r'wavelength ($\AA$)')
+        ax[1].set_ylabel(f'albedo % diff from {ref_label}')
+        ax[1].legend(fontsize=8, ncol=2); ax[1].grid(True, ls='--', lw=0.5, alpha=0.5)
+
+        for i, label in enumerate(labels):
+            if i == ref_i:
+                continue
+            ax[2].plot(cw_g, sol_pd[i], color=colors[i], lw=1.1, label=label)
+        ax[2].axhline(0, color='k', lw=0.8, alpha=0.4)
+        ax[2].set_xlim(wmin, wmax)
+        ax[2].set_xlabel(r'wavelength ($\AA$)')
+        ax[2].set_ylabel(f'solar-at-Mars % diff from {ref_label}')
+        ax[2].legend(fontsize=8, ncol=2); ax[2].grid(True, ls='--', lw=0.5, alpha=0.5)
+
+        fig.tight_layout()
+        if save:
+            os.makedirs(output_dir, exist_ok=True)
+            path = os.path.join(output_dir, 'solar_percent_diff.png')
+            fig.savefig(path, dpi=dpi, bbox_inches='tight')
+            print(f"Saved {path}")
+        if show:
+            plt.show()
+        return fig, ax
+
     # --------- frame-to-frame comparison ---------
     @classmethod
     def plot_visit_overlay(cls, visit, reference=None, ax=None, box_pts=15,
