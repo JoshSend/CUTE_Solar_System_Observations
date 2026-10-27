@@ -16,6 +16,7 @@ from astropy.io import fits          # fits handling
 from astropy.modeling import models, fitting # FITTING
 import matplotlib.pyplot as plt      # plotting
 import re
+from scipy.ndimage import maximum_filter1d, gaussian_filter1d
 
 # Animation
 from matplotlib.animation import FuncAnimation, PillowWriter
@@ -132,6 +133,38 @@ def _degrade_to_R(wave, flux, R_from, R_to):
     fs = _gsmooth(fu, fwhm_lnw / dln)
     return np.interp(lnw, lnu, fs)
 
+# --- Mars disk / slit filling fraction ---
+R_MARS_KM = 3389.5
+AU_KM     = 1.495978707e8
+ARCSEC    = 206264.806
+
+# CUTE slit outline in the slit frame (arcsec): px = across-slit, py = along-slit
+SLIT_PX = [-60., 60., 60., 30., 30., 15., 15., -15., -15., -30., -30., -60., -60.]
+SLIT_PY = [-591.807, -591.807, -351.805, -351.805, 351.805, 351.805, 680.817,
+           680.817, 351.805, 351.805, -351.805, -351.805, -591.807]
+
+def mars_radius_arcsec(mars_earth_au):
+    """Apparent radius of Mars (arcsec) at Earth-Mars distance Delta (AU)."""
+    return R_MARS_KM / (float(mars_earth_au) * AU_KM) * ARCSEC
+
+def slit_fill_fraction(across_arcsec, along_arcsec, mars_earth_au,
+                       n=40000, seed=0):
+    """
+    Geometric fraction of Mars' disk that falls inside the CUTE slit.
+    Disk radius = mars_radius_arcsec(Delta), centred at (across, along) in the
+    slit frame (from the attitude analysis). Uniform-brightness full disk;
+    phase illumination is handled separately by the Lambert phase function.
+    """
+    from matplotlib.path import Path as _Path
+    rho = mars_radius_arcsec(mars_earth_au)
+    rng = np.random.default_rng(seed)
+    t = rng.uniform(0, 2 * np.pi, n)
+    r = rho * np.sqrt(rng.uniform(0, 1, n))          # uniform over the disk
+    pts = np.column_stack([across_arcsec + r * np.cos(t),
+                           along_arcsec + r * np.sin(t)])
+    poly = _Path(np.column_stack([SLIT_PX, SLIT_PY]))
+    return float(poly.contains_points(pts).mean())
+
 def _xcorr_shift(wave, a, b, max_lag_pix=40, cont_fwhm_pix=120.0):
     """
     Wavelength shift (Angstrom) that best aligns template `b` to spectrum `a`,
@@ -178,6 +211,38 @@ def _visit_files(visit, pattern='*.fits', skip_frmid=None, required=True):
     if not files and required:
         raise ValueError(f'No frames left in {visit} after applying skip_frmid')
     return files
+
+def _lambert_phase(alpha_deg):
+    """Integral phase function of a Lambert sphere, normalized to 1 at alpha=0:
+       Phi(a) = [sin a + (pi - a) cos a] / pi.   (first-order; Mars isn't exactly
+       Lambertian, so swap in a measured Mars phase law for rigorous work.)"""
+    a = np.radians(float(alpha_deg))
+    return (np.sin(a) + (np.pi - a) * np.cos(a)) / np.pi
+
+def continuum_bins(wave, refl, solar, bin_A=100.0, env_win_A=25.0,
+                   clean_frac=0.85, min_pts=5):
+    """
+    Continuum albedo: bin `refl` only at wavelengths where the SOLAR spectrum is
+    near its local continuum (line-free), so no line cores and no interpolation.
+    Returns (bin_center, albedo_median, albedo_err) for bins with enough points.
+    """
+    refl = np.asarray(refl, float); solar = np.asarray(solar, float)
+    dl = float(np.median(np.diff(wave)))
+    win = max(int(round(env_win_A / dl)), 3)
+    envelope = gaussian_filter1d(maximum_filter1d(solar, win), win / 2.0)
+    clean = np.isfinite(refl) & np.isfinite(solar) & (solar >= clean_frac * envelope)
+
+    edges = np.arange(wave[0], wave[-1] + bin_A, bin_A)
+    wb, pb, eb = [], [], []
+    for i in range(len(edges) - 1):
+        sel = clean & (wave >= edges[i]) & (wave < edges[i + 1])
+        k = int(sel.sum())
+        if k >= min_pts:
+            v = refl[sel]
+            wb.append(0.5 * (edges[i] + edges[i + 1]))
+            pb.append(float(np.median(v)))
+            eb.append(float(np.std(v) / np.sqrt(k)))
+    return np.array(wb), np.array(pb), np.array(eb)
 
 # ------------------------------------
 
@@ -707,17 +772,25 @@ class CuteObservation:
 
     @classmethod
     def reflectance_curve(cls, cute_csv, solar_file, mars_earth_au,
-                          mars_sun_au=None, solar_wave_unit='nm',
-                          solar_delimiter=',', match_resolution=True,
-                          R_cute=700.0, R_tsis=300.0, align=True,
-                          max_lag_pix=40, xlim=(2490, 3250)):
-        """(wave, reflectance p*Phi, solar_shift_A) -- no plotting."""
+                          phase_angle=None, mars_sun_au=None, solar_wave_unit='nm',
+                          solar_delimiter=',', match_resolution=True, f_slit=None,
+                          R_cute=700.0, R_hsrs=28000.0, R_work=500.0,
+                            align=True,
+                          max_lag_pix=40, xlim=(2490, 3250),
+                          bin_A=30.0, clean_frac=0.85):
+        """
+        Returns (wave, refl, solar_shift_A, bin_wave, bin_albedo, bin_err).
+        `refl` is the full F_CUTE/F_pred ratio (geometric albedo p if phase_angle
+        given); the bin_* arrays are the continuum albedo -- medians of refl at
+        solar-line-free wavelengths only, no interpolation.
+        """
         R_MARS_AU, W_TO_CGS, CUTE_UNIT = 2.2659e-5, 100.0, 1e-9
         d = np.genfromtxt(cute_csv, delimiter=',', names=True)
         nmn = d.dtype.names
         cw = np.asarray(d['wave'] if 'wave' in nmn else d[nmn[0]], float)
         cf = np.asarray(d['flux'] if 'flux' in nmn else d[nmn[1]], float)
-        s = np.atleast_2d(np.genfromtxt(solar_file, delimiter=solar_delimiter, comments='#'))
+        s = np.atleast_2d(np.genfromtxt(solar_file, delimiter=solar_delimiter,
+                                        comments='#'))
         sw = s[:, 0].astype(float)
         if mars_sun_au is not None:
             col = 2 if s.shape[1] > 2 else 1
@@ -727,20 +800,33 @@ class CuteObservation:
         if str(solar_wave_unit).lower().startswith('nm'):
             sw = sw * 10.0
         o = np.argsort(sw); sw, solar_at_mars = sw[o], solar_at_mars[o]
-        solar_pred = solar_at_mars * (R_MARS_AU / float(mars_earth_au)) ** 2 * W_TO_CGS / CUTE_UNIT
-        cute_m = _degrade_to_R(cw, cf, R_cute, R_tsis) if match_resolution else smooth(cf, 15)
-        solar_on_cw = np.interp(cw, sw, solar_pred)
+        solar_pred = (solar_at_mars * (R_MARS_AU / float(mars_earth_au)) ** 2
+                      * W_TO_CGS / CUTE_UNIT)
+
+        # Work at a common resolution R_work (<= R_cute): degrade CUTE down from
+        # its native R_cute AND HSRS down from R_hsrs to the SAME R_work. HSRS has
+        # the true line shape, so it matches CUTE at R_work and the lines cancel;
+        # R_work is chosen low enough to average down CUTE's per-pixel noise.
+        cute_m  = (_degrade_to_R(cw, cf, R_cute, R_work)
+                   if match_resolution else smooth(cf, 15))
+        solar_r = _degrade_to_R(sw, solar_pred, R_hsrs, R_work)
+        solar_on_cw = np.interp(cw, sw, solar_r)
         sh = 0.0
         if align:
             sh = _xcorr_shift(cw, cute_m, solar_on_cw, max_lag_pix)
             solar_on_cw = np.interp(cw - sh, cw, solar_on_cw)
+
         with np.errstate(divide='ignore', invalid='ignore'):
             refl = cute_m / solar_on_cw
-        fwhm_pix = (np.median(cw) / R_tsis) / float(np.median(np.diff(cw)))
-        m = int(np.ceil(1.5 * fwhm_pix))
-        if m > 0:
-            refl[:m] = np.nan; refl[-m:] = np.nan
-        return cw, refl, sh
+        if phase_angle is not None:
+            refl = refl / _lambert_phase(phase_angle)
+        if f_slit is not None and f_slit > 0:
+            refl = refl / f_slit                     # slit-filling correction -> full-disk p
+
+        # continuum albedo at solar-line-free wavelengths (no interpolation)
+        wb, pb, eb = continuum_bins(cw, refl, solar_on_cw,
+                                    bin_A=bin_A, clean_frac=clean_frac)
+        return cw, refl, sh, wb, pb, eb
 
     @classmethod
     def plot_reflectance_all(cls, items, xlim=(2490, 3250), ymax=0.12,
@@ -750,7 +836,7 @@ class CuteObservation:
         cmap = plt.colormaps.get_cmap('tab10')
         fig, ax = plt.subplots(figsize=(11, 5))
         for i, (label, cc, sf, dae) in enumerate(items):
-            cw, refl, sh = cls.reflectance_curve(cc, sf, dae, xlim=xlim)
+            cw, refl, sh, wb, pb, eb = cls.reflectance_curve(cc, sf, dae, xlim=xlim)
             ax.plot(cw, refl, color=cmap(i % 10), lw=1.1, alpha=0.9,
                     label=f"{label}  (shift {sh:+.1f} A)")
         ax.set_xlim(xlim); ax.set_ylim(0, ymax)
@@ -768,8 +854,56 @@ class CuteObservation:
         return fig, ax
 
     @classmethod
+    def plot_reflectance_grid(cls, items, ncols=4, xlim=(2490, 3250), ymax=0.6,
+                              share_ylim=True,
+                              suptitle="2025 Mars NUV Geometric Albedo (continuum-binned)",
+                              save=False, output_dir=None,
+                              fname='albedo_grid.png', dpi=200, show=True):
+        """items: list of (label, cute_csv, solar_file, mars_earth_au, phase_angle_deg)."""
+        n = len(items)
+        if n == 0:
+            raise ValueError("no items to plot")
+        nrows = int(np.ceil(n / ncols))
+        fig, axes = plt.subplots(nrows, ncols, figsize=(4 * ncols, 3 * nrows),
+                                 squeeze=False, sharex=True, constrained_layout=True)
+        axes_flat = axes.ravel()
+        for ax in axes_flat[n:]:
+            ax.axis('off')
+        fig.suptitle(suptitle, fontsize=16)
+
+        for ax, (label, cc, sf, dae, pa, fsl) in zip(axes_flat, items):
+            cw, refl, sh, wb, pb, eb = cls.reflectance_curve(
+                cc, sf, dae, phase_angle=pa, f_slit=fsl, xlim=xlim)
+            ax.plot(cw, refl, color='maroon', lw=0.7, alpha=0.50)        # full ratio
+            ax.errorbar(wb, pb, yerr=eb, fmt='o', ms=3.5, color='k',
+                        capsize=2, lw=1, zorder=5)                       # binned points
+            ax.plot(wb, pb, color='royalblue', lw=1.4, zorder=4)         # <-- line through bins                     # continuum albedo
+            ax.set_title(f"{label}  (a={pa:.1f} deg, shift {sh:+.1f} A)", fontsize=9)
+            ax.set_xlim(xlim)
+            ax.grid(True, ls='--', lw=0.5, alpha=0.5)
+            if share_ylim:
+                ax.set_ylim(0, ymax)
+
+        for i, ax in enumerate(axes_flat[:n]):
+            if i + ncols >= n:
+                ax.set_xlabel(r"Wavelength ($\AA$)", fontsize=9)
+        for r in range(nrows):
+            axes[r, 0].set_ylabel(r"Geometric albedo $p$", fontsize=9)
+
+        if save:
+            if output_dir is None:
+                raise ValueError("save=True needs an output_dir")
+            os.makedirs(output_dir, exist_ok=True)
+            path = os.path.join(output_dir, fname)
+            fig.savefig(path, dpi=dpi, bbox_inches='tight')
+            print(f"Saved {path}")
+        if show:
+            plt.show()
+        return fig, axes
+
+    @classmethod
     def plot_mars_solar_overlay(cls, cute_csv, solar_file, mars_earth_au=None,
-                                mars_sun_au=None, solar_wave_unit='nm',
+                                mars_sun_au=None, solar_wave_unit='nm', phase_angle=None,
                                 solar_delimiter=',', mode='overlay', scale='auto',
                                 match_resolution=True, R_cute=700.0, R_tsis=300.0,
                                 align=True, max_lag_pix=40, box_pts=15,
@@ -847,21 +981,29 @@ class CuteObservation:
                 solar_on_cw = np.interp(cw - sh, cw, solar_on_cw)
 
             with np.errstate(divide='ignore', invalid='ignore'):
-                refl = cute_m / solar_on_cw                      # division: p*Phi
+                refl = cute_m / solar_on_cw                      # p * Phi(alpha)
+            if phase_angle is not None:
+                phi = _lambert_phase(phase_angle)
+                refl = refl / phi                                # -> geometric albedo p
             band = cb & np.isfinite(solar_on_cw) & np.isfinite(cute_m)
             a = float(np.sum(cute_m[band] * solar_on_cw[band]) /
-                      np.sum(solar_on_cw[band] ** 2))            # best-fit albedo
-            resid = cute_m - a * solar_on_cw                     # subtraction
+                      np.sum(solar_on_cw[band] ** 2))
+            resid = cute_m - a * solar_on_cw
 
             fig, (axr, axs) = plt.subplots(2, 1, figsize=(11, 8), sharex=True)
-            axr.plot(cw, refl, color='maroon', lw=1.4, label='Reflectance (I/F)')
-            axr.set_ylabel(r"Reflectance  $p\,\Phi$")
+            axr.plot(cw, refl, color='maroon', lw=1.4,
+                     label=('Geometric albedo p' if phase_angle is not None
+                            else 'Reflectance (I/F)'))
+            axr.set_ylabel(r"Geometric albedo $p$" if phase_angle is not None
+                           else r"Reflectance  $p\,\Phi$")
             axr.set_title(r"Division:  $F_{\rm CUTE}/F_{\rm pred}$")
             good = cb & np.isfinite(refl)
             if good.any():
                 med = float(np.nanmedian(refl[good])); axr.set_ylim(0, 3 * med)
                 print(f"  reflectance median = {med:.4f}, albedo scale a = {a:.4f}"
-                      f", solar shift = {sh:+.2f} A")
+                      + (f", Phi({phase_angle:.1f} deg) = {_lambert_phase(phase_angle):.3f}"
+                         if phase_angle is not None else "")
+                      + f", solar shift = {sh:+.2f} A")
             axr.grid(True, ls='--', lw=0.6, alpha=0.6)
             axr.legend(loc='upper right', fontsize=9)
 

@@ -42,7 +42,7 @@ output_dir.mkdir(parents=True, exist_ok=True)
 #     'both'  both, at roughly double the runtime
 #     'attitude' outputs the CSV of data for positioning against "boresight" in slit
 
-MODE = 'both'
+MODE = 'attitude'
 
 SHOW = False         # pop up each figure.  Leave False for a batch run --
                      # plt.show() on ~200 figures will stall the session.

@@ -11,10 +11,11 @@ import os
 import glob
 import sys
 import matplotlib.pyplot as plt
+import pandas as pd
 
 # cute_mars2025 exists in the "Image Processing" subfolder.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'Image Processing'))
-from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get_output_dir
+from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get_output_dir, slit_fill_fraction
 
 # ==============================================
 # USER INPUTS
@@ -35,9 +36,10 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   
 #   'solar'      : Solar overlay plotting
 #   'solar_all'  : 
+#   'solar_grid' :
 #   'reflect_all': Cross-visit solar reflectance
 
-MODE = "solar_all"
+MODE = "solar_grid"
 
 # save figures/GIFs to the output folder
 SAVE = False
@@ -123,6 +125,25 @@ MARS_EARTH_AU = {
     'Visit1': 0.69, 'Visit2': 0.64, 'Visit3': 0.65, 'Visit4': 0.67,
     'Visit5': 0.69, 'Visit7': 0.77, 'Visit8': 0.87, 'Visit9': 1.12,
 }
+
+PHASE_ANGLE = {
+    'Visit1': 20.05, 'Visit2': 4.22, 'Visit3': 3.72, 'Visit4': 9.56,
+    'Visit5': 14.75, 'Visit7': 23.45, 'Visit8': 29.26, 'Visit9': 35.72,
+}
+
+ATTITUDE_CSV = os.path.join(_DRIVER_DIR, 'output', 'Slit_Overlay',
+                            'CUTE_mars_attitude_error.csv')
+
+def _f_slit_for(visit, frmid):
+    """Slit-filling fraction for one visit's brightest frame, from the attitude CSV."""
+    df = pd.read_csv(ATTITUDE_CSV)
+    row = df[(df['visit'] == visit) & (df['frmid'] == int(frmid))]
+    if row.empty:
+        print(f"  {visit}: frmid {frmid} not in attitude CSV -- f_slit=1")
+        return 1.0
+    across = float(row['offset_across_slit_arcsec'].iloc[0])
+    along  = float(row['offset_along_slit_arcsec'].iloc[0])
+    return slit_fill_fraction(across, along, MARS_EARTH_AU[visit])
 
 def _brightness_csv(visit):
     return _get_output_dir(output_dir,
@@ -264,7 +285,7 @@ def main():
         CuteObservation.plot_mars_solar_overlay(
             hits[0], solar_file, mars_earth_au=MARS_EARTH_AU[VISIT], mode=SOLAR_MODE,
             title=f"{VISIT} frmid {BRIGHTEST[VISIT]}  -  Mars vs Solar Spectrum (TSIS)",
-            save=SAVE, output_dir=out,
+            save=SAVE, output_dir=out, phase_angle=PHASE_ANGLE[VISIT],
             fname=f"{VISIT.lower()}_solar_overlay.png", show=not SAVE)
 
     elif MODE == 'solar_all':
@@ -279,6 +300,7 @@ def main():
             CuteObservation.plot_mars_solar_overlay(
                 hits[0], solar_file, mars_earth_au=MARS_EARTH_AU[v], mode=SOLAR_MODE,
                 title=f"{v} frmid {fid}  -  Mars vs Solar Spectrum (TSIS)",
+                phase_angle=PHASE_ANGLE[v],
                 save=SAVE, output_dir=out,
                 fname=f"{v.lower()}_solar_overlay.png", show=not SAVE)
 
@@ -293,6 +315,20 @@ def main():
                 print(f"  {v}: missing CUTE CSV or solar file, skipping")
         out = _get_output_dir(os.path.join(output_dir, 'solar_overlay')) if SAVE else None
         CuteObservation.plot_reflectance_all(items, save=SAVE, output_dir=out, show=not SAVE)
+
+    elif MODE == 'solar_grid':
+        items = []
+        for v, fid in BRIGHTEST.items():
+            hits = glob.glob(os.path.join(_brightness_csv(v), f"*frmid_{fid}*.csv"))
+            sf = os.path.join(SOLAR_DIR, f"{v.lower()}_solar_spectrum.csv")
+            if hits and os.path.exists(sf):
+                fsl = _f_slit_for(v, fid)
+                print(f"  {v}: f_slit = {fsl:.3f}")
+                items.append((v, hits[0], sf, MARS_EARTH_AU[v], PHASE_ANGLE[v], fsl))
+            else:
+                print(f"  {v}: missing CUTE CSV or solar file, skipping")
+        out = _get_output_dir(os.path.join(output_dir, 'solar_overlay')) if SAVE else None
+        CuteObservation.plot_reflectance_grid(items, save=SAVE, output_dir=out, show=not SAVE)
 
     else:
         raise ValueError(

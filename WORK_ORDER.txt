@@ -1,21 +1,16 @@
-Next Steps in image processing:
-    Remove solar spectra from reduced spectra
-    add resting chemical wv trackers (x=C lines with style '--')
+Integrated intensity over "raw" TSIS spectra. for each visit (trends should match. Sun brightest = brightest spectra)
+DO TRENDS MATCH? is the difference due to the Sun
 
-next processing: remove solar spectra from reduced;
-fun: add resting wvs for chems (hitran?)
+How much of Mars is reflected at Earth (phase-angle difference)
+V3 highest, V9 lowest
+###- phase-angle. how much mars' illuminated disk is seen
+- from Mars' pov, eff_area of CUTE's aperature (check)
 
-Solar Absorption line reflected off Mars
-    - Online, get solar spectrum (w/ absoprtion lines) from LISARD for a day.
-    What is the side of the Sun that is facing Mars and when it was facing Earth. Sun rotates anti-clockwise
-    For observation, add 3 days of exposure for absoprtion spectrum. if angle is 30/40 deg
-    Sun 2\pi in 360^\circ. given some angle of sep, how long will it take for that same side of the Sun to face Mars again.
-    Arbitrary scaling on Mars. Overplot Solar Spectra on Mars spectra (from CUTE), what is the intensity comparison. 
-    Line up lines we expect to see in Solar Spectra, then perform some arbitrary scaling.
+come back to this after phase correction
+// Does that intesity variation match visit intensity variation
+// - acct for change in solar intensity (normalize)
 
-    Is the solar spectrum going to be higher in intensity than Mars spectrum? How to scale it.
-
-    - determine expected spectra for NUV band, "match to hitran"
-    - back to
-
-overlay plot of solar absorption and the reduced spectra
+Take TSIS spectra reaching Mars and ID all major lines in the band
+(should tell you what molecules are dominant in the Sun)
+Mars and Sun spectra are convolved, deconvolve their spectra then subtract
+Mg signal is Sun. Mg signal disappears? good subtraction
