@@ -39,7 +39,7 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'solar_grid' :
 #   'reflect_all': Cross-visit solar reflectance
 
-MODE = "solar_grid"
+MODE = "solar_all"
 
 # save figures/GIFs to the output folder
 SAVE = False

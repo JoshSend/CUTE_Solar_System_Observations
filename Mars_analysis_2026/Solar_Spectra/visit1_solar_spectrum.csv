@@ -1,5 +1,5 @@
 # solar spectrum for visit1; obs 2024-12-22 04:40:31.000 UTC; phased TSIS date 2024-12-21 (shift -1.06 d); Mars r=1.6028 AU; band 200.0-335.0 nm; integrated F_sun@Mars=15.9056 W/m^2, F_sun@1AU=40.8625 W/m^2; source: TSIS-1 HSRS (high-res) re-levelled to TSIS-1 SIM 24hr (2024-12-21)
-# wavelength_nm,irradiance_at_mars_W_m2_nm,irradiance_1au_W_m2_nm,hsrs_uncertainty_W_m2_nm
+wavelength_nm,irradiance_at_mars_W_m2_nm,irradiance_1au_W_m2_nm,hsrs_uncertainty_W_m2_nm
 2.020000e+02,8.189348e-03,2.103891e-02,1.268964e-04
 2.020010e+02,8.264052e-03,2.123083e-02,1.283250e-04
 2.020020e+02,8.338367e-03,2.142175e-02,1.297535e-04

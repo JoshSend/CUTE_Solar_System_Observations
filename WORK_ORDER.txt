@@ -1,16 +1,8 @@
-Integrated intensity over "raw" TSIS spectra. for each visit (trends should match. Sun brightest = brightest spectra)
-DO TRENDS MATCH? is the difference due to the Sun
+integrated Solar Flux @ Mars
 
-How much of Mars is reflected at Earth (phase-angle difference)
-V3 highest, V9 lowest
-###- phase-angle. how much mars' illuminated disk is seen
-- from Mars' pov, eff_area of CUTE's aperature (check)
+EUVM -> FISM2 -> TSIS-HSRS
+to get date for TSIS-HSRS
 
-come back to this after phase correction
-// Does that intesity variation match visit intensity variation
-// - acct for change in solar intensity (normalize)
+Multi-lin reg. fitting conti.
 
-Take TSIS spectra reaching Mars and ID all major lines in the band
-(should tell you what molecules are dominant in the Sun)
-Mars and Sun spectra are convolved, deconvolve their spectra then subtract
-Mg signal is Sun. Mg signal disappears? good subtraction
+% change from 290nm to 330nm

@@ -854,7 +854,7 @@ class CuteObservation:
         return fig, ax
 
     @classmethod
-    def plot_reflectance_grid(cls, items, ncols=4, xlim=(2490, 3250), ymax=0.6,
+    def plot_reflectance_grid(cls, items, ncols=4, xlim=(2490, 3250), ymax=0.1,
                               share_ylim=True,
                               suptitle="2025 Mars NUV Geometric Albedo (continuum-binned)",
                               save=False, output_dir=None,
