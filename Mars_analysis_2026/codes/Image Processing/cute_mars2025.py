@@ -1136,22 +1136,25 @@ class CuteObservation:
             integ.append(trap(irr[m], wl[m]))
         integ = np.array(integ)
 
-        # panel 2: geometric-albedo %diff
-        alb = []
+        # panel 2: % diff of BAND-INTEGRATED geometric albedo (one value per visit)
+        alb_int = []
         for (label, cute_csv, solar_file, mea, pa, fs) in items:
             cw, refl, *_ = cls.reflectance_curve(cute_csv, solar_file, mea,
                                                  phase_angle=pa, f_slit=fs, **refl_kw)
-            alb.append(gsmooth(np.interp(cw_g, cw, refl), sig))
-        alb = np.array(alb)
-        alb_pd = (alb - alb[ref_i]) / alb[ref_i] * 100.0
+            m = (cw >= wmin) & (cw <= wmax) & np.isfinite(refl)
+            alb_int.append(trap(refl[m], cw[m]))        # integral over 2900-3300 A
+        alb_int = np.array(alb_int)
+        alb_int_pd = (alb_int - alb_int[ref_i]) / alb_int[ref_i] * 100.0
 
-        # panel 3: solar-at-Mars %diff
-        sol = []
+        # panel 3: % diff of BAND-INTEGRATED solar flux at Mars (one value per visit)
+        sol_int = []
         for (_lab, _cc, solar_file, _mea, _pa, _fs) in items:
             d = np.genfromtxt(solar_file, delimiter=',', comments='#')
-            sol.append(np.interp(cw_g, d[:, 0] * 10.0, d[:, 1]))   # nm->A, at Mars
-        sol = np.array(sol)
-        sol_pd = (sol - sol[ref_i]) / sol[ref_i] * 100.0
+            wA, irr = d[:, 0] * 10.0, d[:, 1]                      # nm->A, at Mars
+            m = (wA >= wmin) & (wA <= wmax) & np.isfinite(irr)
+            sol_int.append(trap(irr[m], wA[m]))                    # integral over 2900-3300 A
+        sol_int = np.array(sol_int)
+        sol_int_pd = (sol_int - sol_int[ref_i]) / sol_int[ref_i] * 100.0
 
         fig, ax = plt.subplots(3, 1, figsize=figsize)
 
@@ -1164,26 +1167,23 @@ class CuteObservation:
         ax[0].set_xticks(vnums)
         ax[0].grid(True, ls='--', lw=0.5, alpha=0.5)
 
-        for i, label in enumerate(labels):
-            if i == ref_i:
-                continue
-            ax[1].plot(cw_g, alb_pd[i], color=colors[i], lw=1.1, label=label)
+        ax[1].scatter(vnums, alb_int_pd, c=colors, s=55, zorder=3, edgecolor='k', lw=0.4)
+        c1 = np.polyfit(vnums, alb_int_pd, 1)
+        ax[1].plot(xx, np.polyval(c1, xx), color='gray', lw=1.0, alpha=0.35, zorder=1)
         ax[1].axhline(0, color='k', lw=0.8, alpha=0.4)
-        ax[1].set_xlim(wmin, wmax)
-        ax[1].set_xlabel(r'wavelength ($\AA$)')
-        ax[1].set_ylabel(f'albedo % diff from {ref_label}')
-        ax[1].legend(fontsize=8, ncol=2); ax[1].grid(True, ls='--', lw=0.5, alpha=0.5)
+        ax[1].set_xlabel('visit number')
+        ax[1].set_ylabel(f'integrated albedo % diff from {ref_label}')
+        ax[1].set_xticks(vnums)
+        ax[1].grid(True, ls='--', lw=0.5, alpha=0.5)
 
-        for i, label in enumerate(labels):
-            if i == ref_i:
-                continue
-            ax[2].plot(cw_g, sol_pd[i], color=colors[i], lw=1.1, label=label)
+        ax[2].scatter(vnums, sol_int_pd, c=colors, s=55, zorder=3, edgecolor='k', lw=0.4)
+        c2 = np.polyfit(vnums, sol_int_pd, 1)
+        ax[2].plot(xx, np.polyval(c2, xx), color='gray', lw=1.0, alpha=0.35, zorder=1)
         ax[2].axhline(0, color='k', lw=0.8, alpha=0.4)
-        ax[2].set_xlim(wmin, wmax)
-        ax[2].set_xlabel(r'wavelength ($\AA$)')
-        ax[2].set_ylabel(f'solar-at-Mars % diff from {ref_label}')
-        ax[2].legend(fontsize=8, ncol=2); ax[2].grid(True, ls='--', lw=0.5, alpha=0.5)
-
+        ax[2].set_xlabel('visit number')
+        ax[2].set_ylabel(f'integrated solar-at-Mars % diff from {ref_label}')
+        ax[2].set_xticks(vnums)
+        ax[2].grid(True, ls='--', lw=0.5, alpha=0.5)
         fig.tight_layout()
         if save:
             os.makedirs(output_dir, exist_ok=True)
