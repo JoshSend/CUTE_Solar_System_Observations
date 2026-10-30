@@ -23,6 +23,8 @@ from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
 
+from numpy.polynomial import legendre as _Leg
+
 # Turn off matplotlib's auto interpolation for all images
 plt.rcParams['image.interpolation'] = 'none'
 
@@ -243,6 +245,121 @@ def continuum_bins(wave, refl, solar, bin_A=100.0, env_win_A=25.0,
             pb.append(float(np.median(v)))
             eb.append(float(np.std(v) / np.sqrt(k)))
     return np.array(wb), np.array(pb), np.array(eb)
+
+def mlr_albedo(wave, cute, solar, phase=1.0, f_slit=1.0, sigma=None,
+               albedo_scale_A=80.0, spline_k=3, n_poly=12,
+               include_shift=True, include_lsf=True, include_mgii=True,
+               mgii_A=2800.0, mgii_fwhm_A=12.0, ridge=0.0, n_grid=300, band=None):
+    """
+    Geometric albedo by multi-linear regression (replaces continuum binning).
+    Albedo basis = cubic B-splines with knot spacing = albedo_scale_A, the finest
+    wavelength structure the albedo can represent. Set it to the finest REAL Mars
+    feature (~60-100 A); narrower features (solar lines) can't be represented, so
+    they stay in the nuisance terms. albedo_scale_A=None -> Legendre(n_poly).
+    Returns (wgrid, p_grid, p_err, coef, model_on_wave, info).
+    """
+    wave = np.asarray(wave, float); cute = np.asarray(cute, float)
+    solar = np.asarray(solar, float)
+    if band is None:
+        band = (float(np.nanmin(wave)), float(np.nanmax(wave)))
+    lo, hi = band
+    D = float(phase) * float(f_slit) * solar
+    m = ((wave >= lo) & (wave <= hi) & np.isfinite(cute) & np.isfinite(D) & (D > 0))
+    w_, y, Dm = wave[m], cute[m], D[m]
+
+    # albedo basis: B-spline at the chosen scale, or Legendre fallback
+    if albedo_scale_A is not None and albedo_scale_A > 0:
+        from scipy.interpolate import BSpline
+        nseg = max(int(round((hi - lo) / albedo_scale_A)), 1)
+        t_int = np.linspace(lo, hi, nseg + 1)[1:-1]
+        knots = np.r_[[lo] * (spline_k + 1), t_int, [hi] * (spline_k + 1)]
+        basis = lambda ww: BSpline.design_matrix(
+            np.clip(ww, lo, hi), knots, spline_k).toarray()
+    else:
+        basis = lambda ww: _Leg.legvander(
+            2.0 * (np.clip(ww, lo, hi) - lo) / (hi - lo) - 1.0, n_poly)
+    B = basis(w_)
+    nsci = B.shape[1]
+
+    cols = [B * Dm[:, None]]                                 # science: Bj * D
+    if include_shift:
+        cols.append(np.gradient(Dm, w_)[:, None])            # dD/dl
+    if include_lsf:
+        cols.append(np.gradient(np.gradient(Dm, w_), w_)[:, None])   # d2D/dl2
+    if include_mgii:
+        sig = mgii_fwhm_A / 2.3548
+        cols.append((np.exp(-0.5 * ((w_ - mgii_A) / sig) ** 2) * Dm)[:, None])
+    X = np.hstack(cols)
+
+    if sigma is None:
+        s0 = 1.4826 * np.median(np.abs(y - np.median(y))) + 1e-30
+        wt = np.full_like(y, 1.0 / s0 ** 2)
+    else:
+        s = np.asarray(sigma, float)[m]
+        s = np.where(np.isfinite(s) & (s > 0), s, np.inf)
+        wt = 1.0 / s ** 2
+    sw = np.sqrt(wt)
+    Xw, yw = X * sw[:, None], y * sw
+
+    if ridge > 0:
+        A = Xw.T @ Xw + ridge * np.eye(X.shape[1])
+        coef = np.linalg.solve(A, Xw.T @ yw); XtXinv = np.linalg.inv(A)
+    else:
+        coef, *_ = np.linalg.lstsq(Xw, yw, rcond=None)
+        XtXinv = np.linalg.inv(Xw.T @ Xw)
+
+    resid = y - X @ coef
+    dof = max(len(y) - X.shape[1], 1)
+    chi2_red = float(np.sum(wt * resid ** 2) / dof)
+    cov = XtXinv * chi2_red
+
+    a = coef[:nsci]; Caa = cov[:nsci, :nsci]
+    wg = np.linspace(lo, hi, n_grid)
+    Bg = basis(wg)
+    pg = Bg @ a
+    perr = np.sqrt(np.clip(np.einsum('ij,jk,ik->i', Bg, Caa, Bg), 0, None))
+
+    model = np.full(wave.shape, np.nan); model[m] = X @ coef
+    info = dict(chi2_red=chi2_red, n_used=int(m.sum()), n_param=X.shape[1],
+                n_basis=nsci, p_on_wave=np.interp(wave, wg, pg))
+    return wg, pg, perr, coef, model, info
+
+def logsmooth_albedo(wave, cute, solar, phase=1.0, f_slit=1.0,
+                     R_alb=120.0, med_A=7.0, n_grid=300, band=None):
+    """
+    Geometric albedo by LOG-SPACE constant-resolving-power smoothing (better blue-
+    end sensitivity than a parametric fit). In ln-flux the multiplicative solar
+    residual is additive, so a constant-R Gaussian low-pass (uniform in ln-lambda)
+    separates the smooth albedo from the sharp solar lines, with finer Angstrom
+    resolution at the blue end where the albedo rises fastest. A median prefilter
+    (width ~med_A in A) robustly rejects the solar-line spikes first.
+    R_alb = albedo resolving power (lower = smoother; ~80-200 typical).
+    Returns (wgrid, p_grid, p_err, info).
+    """
+    from scipy.ndimage import median_filter, gaussian_filter1d
+    wave = np.asarray(wave, float); cute = np.asarray(cute, float)
+    solar = np.asarray(solar, float)
+    if band is None:
+        band = (float(np.nanmin(wave)), float(np.nanmax(wave)))
+    lo, hi = band
+    D = float(phase) * float(f_slit) * solar
+    m = (wave >= lo) & (wave <= hi) & np.isfinite(cute) & (cute > 0) & np.isfinite(D) & (D > 0)
+    w_ = wave[m]; R = cute[m] / D[m]
+    o = np.argsort(w_); w_, R = w_[o], R[o]
+    lnw = np.log(w_); lnu = np.linspace(lnw[0], lnw[-1], len(w_)); dln = lnu[1] - lnu[0]
+    L = np.log(np.clip(np.interp(lnu, lnw, R), 1e-12, None))
+    med = max(int(round((med_A / np.exp(np.median(lnu))) / dln)), 3)
+    Lm = median_filter(L, med, mode='nearest')              # reject solar spikes
+    sig = (1.0 / R_alb) / 2.3548 / dln                      # constant-R gaussian
+    Llp = gaussian_filter1d(Lm, sig, mode='nearest')        # log albedo
+    hp = Lm - Llp                                           # high-pass residual
+    loc = np.sqrt(np.clip(gaussian_filter1d(hp ** 2, sig, mode='nearest'), 0, None))
+    neff = max(sig * np.sqrt(4 * np.pi), 1.0)
+    Lerr = loc / np.sqrt(neff)
+    wg = np.linspace(lo, hi, n_grid); lng = np.log(wg)
+    pg = np.exp(np.interp(lng, lnu, Llp))
+    perr = pg * np.interp(lng, lnu, Lerr)                   # dp = p * dL
+    return wg, pg, perr, dict(n_used=int(m.sum()), R_alb=R_alb)
 
 # ------------------------------------
 
@@ -777,12 +894,15 @@ class CuteObservation:
                           R_cute=700.0, R_hsrs=28000.0, R_work=500.0,
                             align=True,
                           max_lag_pix=40, xlim=(2490, 3250),
-                          bin_A=30.0, clean_frac=0.85):
+                          method='logsmooth', R_alb=180.0, med_A=7.0,
+                          albedo_scale_A=80.0, mgii_A=2800.0,
+                          mlr_shift=True, mlr_lsf=True, mlr_mgii=True):
         """
-        Returns (wave, refl, solar_shift_A, bin_wave, bin_albedo, bin_err).
-        `refl` is the full F_CUTE/F_pred ratio (geometric albedo p if phase_angle
-        given); the bin_* arrays are the continuum albedo -- medians of refl at
-        solar-line-free wavelengths only, no interpolation.
+        Returns (wave, refl, solar_shift_A, fit_wave, fit_albedo, fit_err).
+        `refl` is the full F_CUTE/F_pred ratio (kept for the faint overlay); the
+        fit_* arrays are the geometric albedo from a multi-linear regression
+        (albedo basis x solar + nuisance regressors), a smooth curve with 1-sigma
+        errors on an n_grid wavelength grid. Replaces the old continuum binning.
         """
         R_MARS_AU, W_TO_CGS, CUTE_UNIT = 2.2659e-5, 100.0, 1e-9
         d = np.genfromtxt(cute_csv, delimiter=',', names=True)
@@ -823,10 +943,19 @@ class CuteObservation:
         if f_slit is not None and f_slit > 0:
             refl = refl / f_slit                     # slit-filling correction -> full-disk p
 
-        # continuum albedo at solar-line-free wavelengths (no interpolation)
-        wb, pb, eb = continuum_bins(cw, refl, solar_on_cw,
-                                    bin_A=bin_A, clean_frac=clean_frac)
-        return cw, refl, sh, wb, pb, eb
+
+        phase_f = _lambert_phase(phase_angle) if phase_angle is not None else 1.0
+        fsl = f_slit if (f_slit is not None and f_slit > 0) else 1.0
+        if method == 'logsmooth':
+            wfit, pfit, efit, _info = logsmooth_albedo(
+                cw, cute_m, solar_on_cw, phase=phase_f, f_slit=fsl, band=xlim,
+                R_alb=R_alb, med_A=med_A)
+        else:                                           # 'mlr' B-spline fit
+            wfit, pfit, efit, _c, _mdl, _info = mlr_albedo(
+                cw, cute_m, solar_on_cw, phase=phase_f, f_slit=fsl, band=xlim,
+                albedo_scale_A=albedo_scale_A, mgii_A=mgii_A, include_shift=mlr_shift,
+                include_lsf=mlr_lsf, include_mgii=mlr_mgii)
+        return cw, refl, sh, cute_m, solar_on_cw, None
 
     @classmethod
     def plot_reflectance_all(cls, items, xlim=(2490, 3250), ymax=0.12,
@@ -854,9 +983,9 @@ class CuteObservation:
         return fig, ax
 
     @classmethod
-    def plot_reflectance_grid(cls, items, ncols=4, xlim=(2490, 3250), ymax=0.1,
+    def plot_reflectance_grid(cls, items, ncols=4, xlim=(2490, 3250), ymax=0.25,
                               share_ylim=True,
-                              suptitle="2025 Mars NUV Geometric Albedo (continuum-binned)",
+                              suptitle="2025 Mars NUV Geometric Albedo",
                               save=False, output_dir=None,
                               fname='albedo_grid.png', dpi=200, show=True):
         """items: list of (label, cute_csv, solar_file, mars_earth_au, phase_angle_deg)."""
@@ -874,10 +1003,10 @@ class CuteObservation:
         for ax, (label, cc, sf, dae, pa, fsl) in zip(axes_flat, items):
             cw, refl, sh, wb, pb, eb = cls.reflectance_curve(
                 cc, sf, dae, phase_angle=pa, f_slit=fsl, xlim=xlim)
-            ax.plot(cw, refl, color='maroon', lw=0.7, alpha=0.50)        # full ratio
-            ax.errorbar(wb, pb, yerr=eb, fmt='o', ms=3.5, color='k',
-                        capsize=2, lw=1, zorder=5)                       # binned points
-            ax.plot(wb, pb, color='royalblue', lw=1.4, zorder=4)         # <-- line through bins                     # continuum albedo
+            ax.plot(cw, refl, color='maroon', lw=0.7, alpha=0.45)        # full ratio
+            # ax.fill_between(wb, pb - eb, pb + eb, color='royalblue',
+            #                 alpha=0.25, zorder=4)                        # 1-sigma band
+            # ax.plot(wb, pb, color='royalblue', lw=1.8, zorder=5) 
             ax.set_title(f"{label}  (a={pa:.1f} deg, shift {sh:+.1f} A)", fontsize=9)
             ax.set_xlim(xlim)
             ax.grid(True, ls='--', lw=0.5, alpha=0.5)
@@ -1188,6 +1317,61 @@ class CuteObservation:
         if save:
             os.makedirs(output_dir, exist_ok=True)
             path = os.path.join(output_dir, 'solar_percent_diff.png')
+            fig.savefig(path, dpi=dpi, bbox_inches='tight')
+            print(f"Saved {path}")
+        if show:
+            plt.show()
+        return fig, ax
+
+    @classmethod
+    def plot_cute_v_solar(cls, items, wmin=2900.0, wmax=3300.0, n_grid=200,
+                          figsize=(8, 10), save=False, output_dir=None,
+                          fname='cute_v_solar.png', dpi=200, show=True, **refl_kw):
+        """
+        Two stacked panels over [wmin, wmax], one point per wavelength (colored by
+        wavelength = the third axis), averaged over the visits in `items` with
+        std-dev error bars:
+          1. corrected CUTE flux   F_CUTE  vs  mean solar flux  F_sol
+          2. visit-averaged albedo p       vs  mean solar flux  F_sol
+        `items`: (label, cute_csv, solar_file, mars_earth_au, phase_angle, f_slit).
+        Diagnostic: panel 1 should be ~linear (slope = albedo); panel 2 should be
+        ~flat vs F_sol -- a trend there is residual solar leaking into the albedo.
+        """
+        wg = np.linspace(wmin, wmax, n_grid)
+        Fc, Fs, Al = [], [], []
+        for (label, cc, sf, dae, pa, fsl) in items:
+            cw, refl, sh, cute_m, solar_on_cw, _ = cls.reflectance_curve(
+                cc, sf, dae, phase_angle=pa, f_slit=fsl, xlim=(wmin, wmax), **refl_kw)
+            Fc.append(np.interp(wg, cw, cute_m, left=np.nan, right=np.nan))
+            Fs.append(np.interp(wg, cw, solar_on_cw, left=np.nan, right=np.nan))
+            Al.append(np.interp(wg, cw, refl, left=np.nan, right=np.nan))
+        Fc, Fs, Al = np.array(Fc), np.array(Fs), np.array(Al)
+
+        fsol_m = np.nanmean(Fs, axis=0)
+        fcute_m, fcute_s = np.nanmean(Fc, axis=0), np.nanstd(Fc, axis=0)
+        alb_m, alb_s = np.nanmean(Al, axis=0), np.nanstd(Al, axis=0)
+
+        fig, ax = plt.subplots(2, 1, figsize=figsize)
+        ax[0].errorbar(fsol_m, fcute_m, yerr=fcute_s, fmt='none', ecolor='gray',
+                       alpha=0.5, zorder=1)
+        s0 = ax[0].scatter(fsol_m, fcute_m, c=wg, cmap='viridis', s=22, zorder=2)
+        ax[0].set_xlabel(r'avg solar flux $F_{\odot}$')
+        ax[0].set_ylabel(r'corrected $F_{\rm CUTE}$')
+        ax[0].grid(True, ls='--', lw=0.5, alpha=0.5)
+        fig.colorbar(s0, ax=ax[0]).set_label(r'Wavelength ($\AA$)')
+
+        ax[1].errorbar(fsol_m, alb_m, yerr=alb_s, fmt='none', ecolor='gray',
+                       alpha=0.5, zorder=1)
+        s1 = ax[1].scatter(fsol_m, alb_m, c=wg, cmap='viridis', s=22, zorder=2)
+        ax[1].set_xlabel(r'avg solar flux $F_{\odot}$')
+        ax[1].set_ylabel(r'avg albedo $p$')
+        ax[1].grid(True, ls='--', lw=0.5, alpha=0.5)
+        fig.colorbar(s1, ax=ax[1]).set_label(r'Wavelength ($\AA$)')
+
+        fig.tight_layout()
+        if save:
+            os.makedirs(output_dir, exist_ok=True)
+            path = os.path.join(output_dir, fname)
             fig.savefig(path, dpi=dpi, bbox_inches='tight')
             print(f"Saved {path}")
         if show:

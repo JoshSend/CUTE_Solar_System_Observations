@@ -1,25 +1,31 @@
 """
-For each CUTE visit, find the Earth date whose solar hemisphere matches the one
-illuminating Mars at the observation time (solar-rotation phasing), pull that
-day's MEASURED TSIS-1 SIM solar spectrum from LISIRD (LaTiS), scale it to Mars'
-heliocentric distance, trim to the CUTE NUV band, and save one file per visit to
+For each CUTE visit, determine the Earth date whose solar hemisphere matches the
+one illuminating Mars at the observation time, pull that day's MEASURED TSIS-1 SIM
+solar spectrum from LISIRD (LaTiS), re-level the high-res TSIS-1 HSRS reference to
+it, scale to Mars' heliocentric distance, trim to the CUTE NUV band, and save one
+file per visit to
     CUTE_Solar_System_Observations\\Mars_analysis_2026\\Solar_spectra\\
 as  <visit>_solar_spectrum.csv.
 
-Input:  a dict  {visit_label: UTC date/time}, e.g.
-            {'visit1': '2024-12-22T04:40:31', 'visit2': '2025-01-12T05:24:48', ...}
-        The value may be an ISO string ('2025-01-19' or '2025-01-19T05:17:41')
-        or an astropy Time / datetime.
+DATE SELECTION (two methods, set DATE_METHOD):
+  'geometric' : sub-observer Carrington-longitude matching (rigid solar rotation).
+  'maven'     : MAVEN EUVM measures the Sun AS SEEN FROM MARS (FISM-M, 0-190 nm).
+                Its Lyman-alpha (chromospheric, 121.6 nm) time series is cross-
+                correlated against the Earth composite Lyman-alpha (LISIRD) to find
+                the empirical phasing lag -> the Earth date to pull TSIS from. The
+                geometric estimate seeds the lag search; if MAVEN data are missing
+                for a visit it falls back to the geometric date for that visit.
+                Cross-correlation is scale/offset-insensitive, so it tolerates the
+                different absolute calibrations of the two Lyman-alpha products.
 
-Requires:  sunpy, astropy, scipy, numpy, requests
-           (pip install sunpy astropy scipy numpy requests)
+Input:  a dict  {visit_label: UTC date/time}.
 
-Solar source:  TSIS-1 SIM Level-3 24-hour SSI via LISIRD LaTiS
-    https://lasp.colorado.edu/lisird/latis/dap/tsis_ssi_24hr
-This is the measured TSIS product (not a model), covers 2018-present, no login.
-Columns returned: time(JD), wavelength(nm), irradiance_1au, irradiance_true_earth,
-measurement_stability, measurement_precision, instrument_uncertainty,
-additional_uncertainty, quality  (all irradiances in W/m^2/nm).
+Requires:  sunpy, astropy, scipy, numpy, requests[, cdflib for DATE_METHOD='maven']
+           (pip install sunpy astropy scipy numpy requests cdflib)
+
+Solar source:  TSIS-1 SIM Level-3 24-hour SSI + TSIS-1 HSRS via LISIRD LaTiS.
+Mars activity:  MAVEN EUVM Level-3 daily (FISM-M) via PDS-PPI (daily CDF files).
+Earth activity: LISIRD composite Lyman-alpha via LaTiS.
 """
 
 import os
@@ -28,11 +34,11 @@ import numpy as np
 import astropy.units as u
 from astropy.time import Time
 from scipy.optimize import brentq
+from scipy.ndimage import median_filter
 from sunpy.coordinates import get_body_heliographic_stonyhurst, HeliographicCarrington
 import requests
-from scipy.ndimage import median_filter
 
-_trap = getattr(np, 'trapezoid', np.trapz)   # band integral, NumPy-version safe
+_trap = np.trapezoid if hasattr(np, 'trapezoid') else np.trapz   # NumPy-version safe
 
 # ============================== CONFIG ==============================
 
@@ -60,9 +66,26 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 OUTPUT_DIR = os.path.abspath(
     os.path.join(_HERE, '..', 'Mars_analysis_2026', 'Solar_spectra'))
 
-# ====================================================================
 HSRS_BASE = 'https://lasp.colorado.edu/lisird/latis/dap/tsis1_hsrs.csv'
 R_SIM, R_HSRS = 300.0, 28000.0     # SIM resolution; HSRS native (NUV) ~ R28000
+
+# ---- MAVEN EUVM date selection -------------------------------------------------
+DATE_METHOD  = 'geometric'            # 'maven' (EUVM cross-correlation) or 'geometric'
+MAVEN_BASE   = 'https://pds-ppi.igpp.ucla.edu/data/maven-euv-modelled/data/daily'
+MAVEN_VER    = 'v18_r01'          # PDS version/revision token in the CDF filenames
+MAVEN_CACHE  = os.path.join(_HERE, '_maven_cache')   # downloaded daily CDFs cached here
+LYA_BASE     = 'https://lasp.colorado.edu/lisird/latis/dap/composite_lyman_alpha.csv'
+LYA_NM       = 121.6              # Lyman-alpha bin to pull from FISM-M (0-190 nm)
+AU_KM        = 1.495978707e8
+XCORR_WIN    = 9.0                # +/- days of Mars pattern used for matching
+XCORR_SEARCH = 8.0               # +/- days searched around the geometric lag
+MAVEN_WORKERS = 6                 # parallel CDF downloads
+# JD of the composite Lyman-alpha epoch '1947-01-01T12:00' (fixed; avoids the
+# ERFA pre-1960 'dubious year' UTC warning, and daily data needs only day precision)
+JD_LYA_EPOCH = 2432187.0
+
+# ====================================================================
+
 
 def _gsmooth(y, fwhm_pix):
     sigma = max(fwhm_pix / 2.3548, 1e-6); half = int(np.ceil(4 * sigma))
@@ -96,12 +119,24 @@ def fetch_hsrs(band_nm, chunk_nm=15.0, timeout=180):
 
 def relevel_hsrs(hw, hirr, sim_w, sim_irr):
     """HSRS high-res shape re-leveled to the day's SIM activity:
-       ratio = SIM / (HSRS degraded to SIM res), applied to native HSRS."""
-    hsrs_sim = _degrade_to_R(hw, hirr, R_HSRS, R_SIM)           # HSRS at SIM resolution
-    ratio_sim = sim_irr / np.interp(sim_w, hw, hsrs_sim)        # smooth, on SIM grid
-    return hirr * np.interp(hw, sim_w, ratio_sim)              # day-corrected, high-res (1 AU)
+       ratio = SIM / (HSRS degraded to SIM res), applied to native HSRS.
+       The ratio is a BROADBAND correction, so narrow SIM glitches / channel-
+       splice dropouts are sigma-clipped out before they reach the template."""
+    hsrs_sim  = _degrade_to_R(hw, hirr, R_HSRS, R_SIM)         # HSRS at SIM resolution
+    ratio_sim = sim_irr / np.interp(sim_w, hw, hsrs_sim)       # smooth, on SIM grid
 
-# ----------------------- solar-rotation phasing ----------------------
+    med   = median_filter(ratio_sim, size=7, mode='nearest')
+    resid = ratio_sim - med
+    mad   = np.median(np.abs(resid - np.median(resid))) + 1e-30
+    bad   = np.abs(resid) > 5.0 * 1.4826 * mad                # robust ~5-sigma
+    n_bad = int(bad.sum())
+    if n_bad:
+        print(f"    (clipped {n_bad} narrow SIM re-level glitch point(s))")
+    ratio_sim[bad] = med[bad]
+
+    return hirr * np.interp(hw, sim_w, ratio_sim)             # day-corrected, high-res (1 AU)
+
+# ----------------------- solar-rotation phasing (geometric) ----------------------
 def sub_carr_lon(body, t):
     """Sub-observer Carrington longitude (deg) of `body` at time `t`."""
     c = get_body_heliographic_stonyhurst(body, t)
@@ -140,16 +175,147 @@ def mars_helio_dist_au(t):
     return get_body_heliographic_stonyhurst('mars', t).radius.to_value(u.AU)
 
 
-# --------------------------- LaTiS / TSIS pull -----------------------
-def fetch_solar_day(t_match, band_nm, widen=3, timeout=120):
+# ------------------- MAVEN EUVM / Earth Lyman-alpha date selection ----------------
+def fetch_earth_lya(t0, t1, timeout=120):
+    """Earth composite Lyman-alpha (LISIRD) over [t0,t1]. Returns (jd, irr) at 1 AU.
+       Native time = 'days since 1947-01-01T12:00'."""
+    d0 = (t0 - 2 * u.day).datetime.strftime('%Y-%m-%d')
+    d1 = (t1 + 2 * u.day).datetime.strftime('%Y-%m-%d')
+    txt = requests.get(f"{LYA_BASE}?time>={d0}&time<={d1}", timeout=timeout).text
+    arr = np.atleast_2d(np.genfromtxt(io.StringIO(txt), delimiter=',', skip_header=1))
+    if arr.size == 0 or arr.shape[1] < 2:
+        raise RuntimeError(f"no Earth Lyman-alpha in {d0}..{d1} (check coverage)")
+    jd = JD_LYA_EPOCH + arr[:, 0]
+    irr = arr[:, 1]
+    ok = np.isfinite(jd) & np.isfinite(irr) & (irr > 0)
+    o = np.argsort(jd[ok])
+    return jd[ok][o], irr[ok][o]
+
+
+def fetch_maven_lya(t0, t1, cache_dir=MAVEN_CACHE, ver=MAVEN_VER,
+                    lya_nm=LYA_NM, timeout=(10, 60), workers=MAVEN_WORKERS):
     """
-    Pull the TSIS-1 SIM 24-hour spectrum for the day nearest t_match over the
+    Daily MAVEN EUVM (FISM-M) Lyman-alpha at Mars over [t0,t1], scaled to 1-AU
+    equivalent using the Sun-MAVEN distance. One daily CDF per day, cached locally;
+    missing files are downloaded in parallel with a progress counter.
+    Returns (jd, lya_1au). Requires cdflib.
+    """
+    import cdflib
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    os.makedirs(cache_dir, exist_ok=True)
+    start = Time(t0.datetime.strftime('%Y-%m-%d'))            # UT midnight of t0's day
+    n = int(np.ceil(t1.jd - start.jd)) + 1
+    days = [(start + k * u.day).datetime for k in range(n)]
+
+    def _local(dt):
+        return os.path.join(cache_dir, f"mvn_euv_l3_daily_{dt:%Y%m%d}_{ver}.cdf")
+
+    # download whatever is not already cached, in parallel
+    todo = [dt for dt in days
+            if not (os.path.exists(_local(dt)) and os.path.getsize(_local(dt)) > 1000)]
+    if todo:
+        sess = requests.Session()
+        sess.headers.update({'User-Agent': 'CUTE-Mars-pipeline/1.0 (research)'})
+        print(f"  downloading {len(todo)} MAVEN daily CDFs "
+              f"({len(days) - len(todo)} cached) with {workers} workers...")
+
+        def _get(dt):
+            url = f"{MAVEN_BASE}/{dt:%Y}/{dt:%m}/mvn_euv_l3_daily_{dt:%Y%m%d}_{ver}.cdf"
+            try:
+                r = sess.get(url, timeout=timeout)
+                if r.status_code == 200 and len(r.content) > 1000:
+                    with open(_local(dt), 'wb') as f:
+                        f.write(r.content)
+                    return True
+            except Exception:
+                pass
+            return False                                     # missing day / error -> skip
+
+        done = 0
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            for _ in as_completed([ex.submit(_get, dt) for dt in todo]):
+                done += 1
+                if done % 10 == 0 or done == len(todo):
+                    print(f"    {done}/{len(todo)} files", flush=True)
+
+    # parse Lyman-alpha from every cached day
+    jd, lya = [], []
+    n_bad = 0
+    for dt in days:
+        local = _local(dt)
+        if not os.path.exists(local):
+            continue
+        try:
+            c = cdflib.CDF(local)
+            v = np.asarray(c.varget('v'), float).ravel()             # wavelength (190)
+            y = np.asarray(c.varget('y'), float).reshape(-1, v.size)   # (nrec, 190)
+            dist = np.asarray(c.varget('maven_sun_distance'), float).ravel()  # km
+            flg = np.asarray(c.varget('flag')).ravel()
+        except Exception:
+            n_bad += 1; continue
+        bi = int(np.argmin(np.abs(v - lya_nm)))
+        djd = Time(dt.strftime('%Y-%m-%d')).jd + 0.5             # daily value -> noon UT
+        for i in range(y.shape[0]):
+            if flg.size > i and flg[i] > 1:                      # 0-1 good; 2-3 poor
+                continue
+            val = y[i, bi]
+            dk = dist[i] if dist.size > i else (dist[0] if dist.size else np.nan)
+            if not (np.isfinite(val) and val > 0 and np.isfinite(dk)):
+                continue
+            jd.append(djd)
+            lya.append(val * (dk / AU_KM) ** 2)                  # at Mars -> 1-AU equiv
+    jd, lya = np.array(jd), np.array(lya)
+    if jd.size == 0:
+        raise RuntimeError("no usable MAVEN EUVM days (check coverage / cdflib)")
+    o = np.argsort(jd)
+    print(f"  MAVEN EUVM: {jd.size} usable days"
+          + (f" ({n_bad} unreadable files)" if n_bad else ""))
+    return jd[o], lya[o]
+
+
+def maven_phase_lag(t_obs, jd_m, lya_m, jd_e, lya_e, geom_lag,
+                    win=XCORR_WIN, search=XCORR_SEARCH, step=0.25, min_pts=6):
+    """
+    Empirical lag (days) so Earth(t_obs + lag) matches the Mars-side activity at
+    t_obs, by cross-correlating MAVEN (Mars) vs composite (Earth) Lyman-alpha over
+    a +-win day window, searching +-search days around the geometric lag. Scale/
+    offset-insensitive. Falls back to geom_lag if too few MAVEN points in window.
+    Returns (lag_days, max_corr, n_mars_points).
+    """
+    t0 = t_obs.jd
+    tau = np.arange(-win, win + step, step)
+    m = np.interp(t0 + tau, jd_m, lya_m, left=np.nan, right=np.nan)
+    good = np.isfinite(m)
+    if good.sum() < min_pts:
+        return float(geom_lag), np.nan, int(good.sum())
+    tau_g, m = tau[good], m[good]
+    m = (m - m.mean()) / (m.std() + 1e-30)
+    best_c, best_L = -2.0, float(geom_lag)
+    for L in np.arange(geom_lag - search, geom_lag + search + step, step):
+        e = np.interp(t0 + tau_g + L, jd_e, lya_e, left=np.nan, right=np.nan)
+        if not np.isfinite(e).all():
+            continue
+        e = (e - e.mean()) / (e.std() + 1e-30)
+        c = float(np.mean(m * e))
+        if c > best_c:
+            best_c, best_L = c, float(L)
+    return best_L, best_c, int(good.sum())
+
+
+# --------------------------- LaTiS / TSIS pull -----------------------
+def fetch_solar_day(t_match, band_nm, widen=3, timeout=120, min_pts=50):
+    """
+    Pull the TSIS-1 SIM 24-hour spectrum for the VALID day nearest t_match over the
     CUTE band. Returns (wavelength_nm, irradiance_1au, uncertainty, used_time).
-    Widens the date window if the exact day is missing, then picks the nearest.
+
+    Widens the window (0, +-widen, +-3*widen, +-6*widen days) until it finds a day
+    that actually has a full spectrum -- not just any rows. A narrow window can come
+    back all-flagged/NaN (a missing SIM day); the old code broke on that and raised,
+    so a matched date landing on a flagged day failed instead of using the nearby
+    good day. `min_pts` = minimum valid points for a day to count as a real spectrum.
     """
     jd_target = t_match.jd
-    arr = np.empty((0, 9))
-    for w in (0, widen, widen * 3):
+    for w in (0, widen, widen * 3, widen * 6):
         d0 = (t_match - w * u.day).datetime.strftime('%Y-%m-%d')
         d1 = (t_match + (w + 1) * u.day).datetime.strftime('%Y-%m-%d')
         url = (f"{LATIS_BASE}?time>={d0}&time<{d1}"
@@ -157,36 +323,33 @@ def fetch_solar_day(t_match, band_nm, widen=3, timeout=120):
         txt = requests.get(url, timeout=timeout).text
         arr = np.atleast_2d(np.genfromtxt(io.StringIO(txt), delimiter=',',
                                           skip_header=1))
-        if arr.size and arr.shape[1] >= 7:
-            break
-    if arr.size == 0:
-        raise RuntimeError(f"no TSIS data near {t_match.iso} (check coverage)")
-
-    # choose the daily record (unique JD) nearest the matched time
-    times = arr[:, C_TIME]
-    uniq = np.unique(times)
-    best = uniq[np.argmin(np.abs(uniq - jd_target))]
-
-    sel = times == best
-    wl  = arr[sel, C_WAVE]
-    irr = arr[sel, C_IRR1AU]
-    unc = arr[sel, C_UNC]
-    # drop flagged / missing points: TSIS marks them NaN or with a fill value,
-    # and a single NaN makes the whole band integral (np.trapz) NaN -- and would
-    # also land in the saved CSV.
-    ok = np.isfinite(wl) & np.isfinite(irr) & (irr > 0)
-    if not ok.any():
-        raise RuntimeError(f"no valid TSIS points near {t_match.iso}")
-    n_drop = int((~ok).sum())
-    if n_drop:
-        print(f"    (dropped {n_drop} flagged/missing TSIS points)")
-    wl, irr, unc = wl[ok], irr[ok], unc[ok]
-    o = np.argsort(wl)
-    return wl[o], irr[o], unc[o], Time(best, format='jd')
+        if arr.size == 0 or arr.shape[1] < 7:
+            continue
+        # keep only valid points (TSIS flags missing data as NaN / fill)
+        ok = (np.isfinite(arr[:, C_WAVE]) & np.isfinite(arr[:, C_IRR1AU])
+              & (arr[:, C_IRR1AU] > 0))
+        if not ok.any():
+            continue
+        arrv = arr[ok]
+        times = arrv[:, C_TIME]
+        uniq, counts = np.unique(times, return_counts=True)
+        full = uniq[counts >= min_pts]                 # days with a real spectrum
+        if full.size == 0:
+            continue                                    # widen further
+        best = full[np.argmin(np.abs(full - jd_target))]
+        sel = times == best
+        wl, irr, unc = arrv[sel, C_WAVE], arrv[sel, C_IRR1AU], arrv[sel, C_UNC]
+        o = np.argsort(wl)
+        if w:
+            print(f"    (nearest valid TSIS day {Time(best, format='jd').iso[:10]}, "
+                  f"widened +-{w} d)")
+        return wl[o], irr[o], unc[o], Time(best, format='jd')
+    raise RuntimeError(f"no valid TSIS SIM day within +-{widen * 6} d of "
+                       f"{t_match.iso} (product coverage/latency?)")
 
 # ------------------------------- driver ------------------------------
 def run(observations=OBSERVATIONS, output_dir=OUTPUT_DIR, band_nm=BAND_NM,
-        scale_to_mars=SCALE_TO_MARS):
+        scale_to_mars=SCALE_TO_MARS, date_method=DATE_METHOD):
     os.makedirs(output_dir, exist_ok=True)
 
     # High-res HSRS is static -- pull it once and reuse for every visit.
@@ -195,14 +358,42 @@ def run(observations=OBSERVATIONS, output_dir=OUTPUT_DIR, band_nm=BAND_NM,
     print(f"  HSRS: {hw.size} points, {hw[0]:.3f}-{hw[-1]:.3f} nm "
           f"(~{np.median(np.diff(hw))*1000:.2f} pm sampling)")
 
-    summary = []
-    print(f"\n{'visit':>8} {'obs UTC':>20} {'-> TSIS date':>13} {'shift/d':>8} "
-          f"{'r/AU':>7} {'Fsun@Mars':>11} {'Fsun@1AU':>10}")
+    # --- pass 1: geometric phasing for every visit (always; it anchors the search)
+    vis = {}
     for label, obs in observations.items():
         t_obs = obs if isinstance(obs, Time) else Time(obs)
-        t_match, dd, lon_mars = matched_earth_date(t_obs)
+        t_geom, dd_geom, _ = matched_earth_date(t_obs)
+        vis[label] = dict(t_obs=t_obs, t_geom=t_geom, dd_geom=dd_geom,
+                          dd=dd_geom, t_match=t_geom, xcorr=np.nan, npts=0)
 
-        # TSIS SIM for this visit's phased day -> supplies the daily activity level
+    # --- pass 2 (optional): refine the matched date with MAVEN EUVM activity -----
+    if date_method == 'maven':
+        try:
+            t_obs_all = [v['t_obs'] for v in vis.values()]
+            dd_max = max(v['dd_geom'] for v in vis.values())
+            dd_min = min(v['dd_geom'] for v in vis.values())
+            t0 = min(t_obs_all) + (min(dd_min, 0) - XCORR_SEARCH - XCORR_WIN - 2) * u.day
+            t1 = max(t_obs_all) + (max(dd_max, 0) + XCORR_SEARCH + XCORR_WIN + 2) * u.day
+            print("fetching composite Lyman-alpha (Earth, LISIRD)...")
+            jd_e, lya_e = fetch_earth_lya(t0, t1)
+            print("fetching MAVEN EUVM Lyman-alpha (Mars, PDS daily CDFs)...")
+            jd_m, lya_m = fetch_maven_lya(t0, t1)
+            for label, v in vis.items():
+                L, corr, npts = maven_phase_lag(v['t_obs'], jd_m, lya_m, jd_e, lya_e,
+                                                v['dd_geom'])
+                v['dd'], v['t_match'] = L, v['t_obs'] + L * u.day
+                v['xcorr'], v['npts'] = corr, npts
+        except Exception as e:
+            print(f"  [maven] failed ({e}); using geometric phasing for all visits")
+            date_method = 'geometric'
+
+    summary = []
+    print(f"\n{'visit':>8} {'obs UTC':>20} {'-> TSIS date':>13} {'dd':>7} "
+          f"{'dd_geom':>8} {'xcorr':>6} {'r/AU':>7} {'Fsun@Mars':>11}")
+    for label, v in vis.items():
+        t_obs, t_match, dd = v['t_obs'], v['t_match'], v['dd']
+
+        # TSIS SIM for the matched day -> supplies the daily activity level
         wl, irr1au, unc, used = fetch_solar_day(t_match, band_nm)
 
         # HSRS high-res shape, re-levelled to the day's SIM level (Mg II etc.)
@@ -214,7 +405,6 @@ def run(observations=OBSERVATIONS, output_dir=OUTPUT_DIR, band_nm=BAND_NM,
         else:
             r, solar_mars = np.nan, solar_1au.copy()
 
-        # band-integrated solar flux (W/m^2 over the CUTE NUV band)
         flux_mars = float(_trap(solar_mars, hw))       # incident at Mars
         flux_1au  = float(_trap(solar_1au,  hw))       # at 1 AU (reference)
 
@@ -222,7 +412,9 @@ def run(observations=OBSERVATIONS, output_dir=OUTPUT_DIR, band_nm=BAND_NM,
         np.savetxt(
             path, np.column_stack([hw, solar_mars, solar_1au, hunc]), delimiter=',',
             header=(f"solar spectrum for {label}; obs {t_obs.iso} UTC; "
-                    f"phased TSIS date {used.iso[:10]} (shift {dd:+.2f} d); "
+                    f"matched TSIS date {used.iso[:10]} (dd {dd:+.2f} d, "
+                    f"method={date_method}, dd_geom {v['dd_geom']:+.2f} d, "
+                    f"xcorr {v['xcorr']:.3f}); "
                     f"Mars r={r:.4f} AU; band {band_nm[0]}-{band_nm[1]} nm; "
                     f"integrated F_sun@Mars={flux_mars:.4f} W/m^2, "
                     f"F_sun@1AU={flux_1au:.4f} W/m^2; "
@@ -232,19 +424,21 @@ def run(observations=OBSERVATIONS, output_dir=OUTPUT_DIR, band_nm=BAND_NM,
                     f"irradiance_1au_W_m2_nm,hsrs_uncertainty_W_m2_nm"),
             comments='# ', fmt='%.6e')
 
-        summary.append((label, t_obs.iso, used.iso[:10], dd, r, flux_mars, flux_1au))
+        summary.append((label, t_obs.iso, used.iso[:10], dd, v['dd_geom'],
+                        v['xcorr'], r, flux_mars, flux_1au))
         print(f"{label:>8} {t_obs.iso[:19]:>20} {used.iso[:10]:>13} "
-              f"{dd:>8.2f} {r:>7.4f} {flux_mars:>11.4f} {flux_1au:>10.4f}")
+              f"{dd:>7.2f} {v['dd_geom']:>8.2f} {v['xcorr']:>6.3f} "
+              f"{r:>7.4f} {flux_mars:>11.4f}")
 
-    print(f"\n(Fsun columns = solar flux integrated over "
-          f"{band_nm[0]:.0f}-{band_nm[1]:.0f} nm, in W/m^2)")
+    print(f"\n(date method: {date_method}; dd = matched-date shift from obs, "
+          f"dd_geom = geometric-only shift, xcorr = MAVEN match quality)")
 
     log = os.path.join(output_dir, "phasing_summary.csv")
     with open(log, 'w') as f:
-        f.write("visit,obs_utc,tsis_date,shift_days,mars_r_au,"
-                "Fsun_at_mars_W_m2,Fsun_1au_W_m2\n")
+        f.write("visit,obs_utc,tsis_date,dd_days,dd_geom_days,xcorr,"
+                "mars_r_au,Fsun_at_mars_W_m2,Fsun_1au_W_m2\n")
         for row in summary:
-            f.write("{},{},{},{:.3f},{:.4f},{:.5f},{:.5f}\n".format(*row))
+            f.write("{},{},{},{:.3f},{:.3f},{:.3f},{:.4f},{:.5f},{:.5f}\n".format(*row))
     print(f"\nWrote {len(summary)} spectra + phasing_summary.csv -> {output_dir}")
 
 

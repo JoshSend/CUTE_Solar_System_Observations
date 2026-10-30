@@ -39,8 +39,9 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'solar_grid' :
 #   'reflect_all': Cross-visit solar reflectance
 #   'solar_diff' :
+#   'cutevsolar' :
 
-MODE = "solar_diff"
+MODE = "cutevsolar"
 
 # save figures/GIFs to the output folder
 SAVE = False
@@ -329,7 +330,7 @@ def main():
             else:
                 print(f"  {v}: missing CUTE CSV or solar file, skipping")
         out = _get_output_dir(os.path.join(output_dir, 'solar_overlay')) if SAVE else None
-        CuteObservation.plot_reflectance_grid(items, save=SAVE, output_dir=out, show=not SAVE)
+        CuteObservation.plot_reflectance_grid(items, save=SAVE, output_dir=out, show=not SAVE, ymax=0.3)
 
     elif MODE == 'solar_diff':
         items = []
@@ -345,6 +346,19 @@ def main():
         CuteObservation.plot_solar_percent_diff(
             items, ref_label='Visit1',
             save=SAVE, output_dir=out, show=not SAVE)
+
+    elif MODE == 'cutevsolar':
+        items = []
+        for v, fid in BRIGHTEST.items():
+            hits = glob.glob(os.path.join(_brightness_csv(v), f"*frmid_{fid}*.csv"))
+            sf = os.path.join(SOLAR_DIR, f"{v.lower()}_solar_spectrum.csv")
+            if hits and os.path.exists(sf):
+                items.append((v, hits[0], sf, MARS_EARTH_AU[v], PHASE_ANGLE[v],
+                              _f_slit_for(v, fid)))
+            else:
+                print(f"  {v}: missing CUTE CSV or solar file, skipping")
+        out = _get_output_dir(os.path.join(output_dir, 'cute_v_solar')) if SAVE else None
+        CuteObservation.plot_cute_v_solar(items, save=SAVE, output_dir=out, show=not SAVE)
 
     else:
         raise ValueError(

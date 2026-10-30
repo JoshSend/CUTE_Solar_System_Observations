@@ -3,5 +3,6 @@ integrated Solar Flux @ Mars
 
 EUVM -> FISM2 -> TSIS-HSRS
 to get date for TSIS-HSRS
+# MAVEN agrees with the geometric interpretation
 
 Multi-lin reg. fitting conti.
