@@ -41,7 +41,7 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'solar_diff' :
 #   'cutevsolar' :
 
-MODE = "cutevsolar"
+MODE = "solar_grid"
 
 # save figures/GIFs to the output folder
 SAVE = False
