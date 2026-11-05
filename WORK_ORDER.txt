@@ -1,8 +1,16 @@
-integrated Solar Flux @ Mars
-% change from 290nm to 330nm
+Errors are standard deviations on y axis
 
-EUVM -> FISM2 -> TSIS-HSRS
-to get date for TSIS-HSRS
-# MAVEN agrees with the geometric interpretation
+Latest MRO optical dust depth is Feb 2023 to Nov 2024,
+outside of CUTE Mars observations
 
-Multi-lin reg. fitting conti.
+top: 
+corrected CUTE flux (as in the fitted) v avg solar flux
+bottom:
+
+top -> sol flux v cute flux integrated over the region
+bot -> sol fluv v cute albedo visit avg int over region
+
+
+change in albedo as func of time, 
+but is it tracking a change in CUTE_obs, the Sun,
+or ratio?

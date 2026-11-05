@@ -41,7 +41,7 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'solar_diff' :
 #   'cutevsolar' :
 
-MODE = "solar_grid"
+MODE = "cutevsolar"
 
 # save figures/GIFs to the output folder
 SAVE = False
@@ -131,6 +131,13 @@ MARS_EARTH_AU = {
 PHASE_ANGLE = {
     'Visit1': 20.05, 'Visit2': 4.22, 'Visit3': 3.72, 'Visit4': 9.56,
     'Visit5': 14.75, 'Visit7': 23.45, 'Visit8': 29.26, 'Visit9': 35.72,
+}
+
+# MRO column dust optical depth per visit (fill from MRO/MCS or the Montabone
+# CDOD gridded climatology for each visit's date; None = unknown, panel 3 skips it)
+DUST = {
+    'Visit1': None, 'Visit2': None, 'Visit3': None, 'Visit4': None,
+    'Visit5': None, 'Visit7': None, 'Visit8': None, 'Visit9': None,
 }
 
 ATTITUDE_CSV = os.path.join(_DRIVER_DIR, 'output', 'Slit_Overlay',
@@ -358,7 +365,8 @@ def main():
             else:
                 print(f"  {v}: missing CUTE CSV or solar file, skipping")
         out = _get_output_dir(os.path.join(output_dir, 'cute_v_solar')) if SAVE else None
-        CuteObservation.plot_cute_v_solar(items, save=SAVE, output_dir=out, show=not SAVE)
+        CuteObservation.plot_cute_v_solar(items, dust=DUST, save=SAVE,
+                                          output_dir=out, show=not SAVE)
 
     else:
         raise ValueError(

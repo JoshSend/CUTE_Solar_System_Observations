@@ -1324,49 +1324,71 @@ class CuteObservation:
         return fig, ax
 
     @classmethod
-    def plot_cute_v_solar(cls, items, wmin=2900.0, wmax=3300.0, n_grid=200,
-                          figsize=(8, 10), save=False, output_dir=None,
+    def plot_cute_v_solar(cls, items, dust=None, wmin=2900.0, wmax=3300.0, n_grid=200,
+                          figsize=(8, 13), save=False, output_dir=None,
                           fname='cute_v_solar.png', dpi=200, show=True, **refl_kw):
         """
-        Two stacked panels over [wmin, wmax], one point per wavelength (colored by
-        wavelength = the third axis), averaged over the visits in `items` with
-        std-dev error bars:
-          1. corrected CUTE flux   F_CUTE  vs  mean solar flux  F_sol
-          2. visit-averaged albedo p       vs  mean solar flux  F_sol
-        `items`: (label, cute_csv, solar_file, mars_earth_au, phase_angle, f_slit).
-        Diagnostic: panel 1 should be ~linear (slope = albedo); panel 2 should be
-        ~flat vs F_sol -- a trend there is residual solar leaking into the albedo.
+        Three stacked panels over [wmin, wmax]:
+          1. flux F_CUTE corrected vs mean solar flux F_sol   (per wavelength)
+          2. visit-averaged albedo p    vs mean solar flux F_sol   (per wavelength)
+          3. band-averaged albedo p     vs MRO dust optical depth  (per VISIT)
+        Panels 1-2 average over visits (point per wavelength); panel 3 averages over
+        wavelength (point per visit). Std-dev error bars throughout.
+        items: (label, cute_csv, solar_file, mars_earth_au, phase_angle, f_slit).
+        dust : {visit_label: dust_value} from MRO for panel 3 (None -> panel 3 blank).
         """
         wg = np.linspace(wmin, wmax, n_grid)
-        Fc, Fs, Al = [], [], []
+        Fc, Fs, Al, labels = [], [], [], []
         for (label, cc, sf, dae, pa, fsl) in items:
             cw, refl, sh, cute_m, solar_on_cw, _ = cls.reflectance_curve(
                 cc, sf, dae, phase_angle=pa, f_slit=fsl, xlim=(wmin, wmax), **refl_kw)
             Fc.append(np.interp(wg, cw, cute_m, left=np.nan, right=np.nan))
             Fs.append(np.interp(wg, cw, solar_on_cw, left=np.nan, right=np.nan))
             Al.append(np.interp(wg, cw, refl, left=np.nan, right=np.nan))
+            labels.append(label)
         Fc, Fs, Al = np.array(Fc), np.array(Fs), np.array(Al)
 
         fsol_m = np.nanmean(Fs, axis=0)
         fcute_m, fcute_s = np.nanmean(Fc, axis=0), np.nanstd(Fc, axis=0)
         alb_m, alb_s = np.nanmean(Al, axis=0), np.nanstd(Al, axis=0)
 
-        fig, ax = plt.subplots(2, 1, figsize=figsize)
-        ax[0].errorbar(fsol_m, fcute_m, yerr=fcute_s, fmt='none', ecolor='gray',
-                       alpha=0.5, zorder=1)
+        fig, ax = plt.subplots(3, 1, figsize=figsize)
+        # 1: per-wavelength, corrected CUTE flux vs solar flux
+        ax[0].errorbar(fsol_m, fcute_m, yerr=fcute_s, fmt='none', ecolor='gray', alpha=0.5, zorder=1)
         s0 = ax[0].scatter(fsol_m, fcute_m, c=wg, cmap='viridis', s=22, zorder=2)
-        ax[0].set_xlabel(r'avg solar flux $F_{\odot}$')
-        ax[0].set_ylabel(r'corrected $F_{\rm CUTE}$')
-        ax[0].grid(True, ls='--', lw=0.5, alpha=0.5)
         fig.colorbar(s0, ax=ax[0]).set_label(r'Wavelength ($\AA$)')
-
-        ax[1].errorbar(fsol_m, alb_m, yerr=alb_s, fmt='none', ecolor='gray',
-                       alpha=0.5, zorder=1)
+        ax[0].set_xlabel(r'mean solar flux $F_{\odot}$ (CUTE units)')
+        ax[0].set_ylabel(r'flux $F_{\rm CUTE}$ (corrected)')
+        ax[0].grid(True, ls='--', lw=0.5, alpha=0.5)
+        # 2: per-wavelength, visit-averaged albedo vs solar flux
+        ax[1].errorbar(fsol_m, alb_m, yerr=alb_s, fmt='none', ecolor='gray', alpha=0.5, zorder=1)
         s1 = ax[1].scatter(fsol_m, alb_m, c=wg, cmap='viridis', s=22, zorder=2)
-        ax[1].set_xlabel(r'avg solar flux $F_{\odot}$')
-        ax[1].set_ylabel(r'avg albedo $p$')
-        ax[1].grid(True, ls='--', lw=0.5, alpha=0.5)
         fig.colorbar(s1, ax=ax[1]).set_label(r'Wavelength ($\AA$)')
+        ax[1].set_xlabel(r'mean solar flux $F_{\odot}$ (CUTE units)')
+        ax[1].set_ylabel(r'geometric albedo $p$ (visit-avg)')
+        ax[1].grid(True, ls='--', lw=0.5, alpha=0.5)
+        # 3: per-visit, band-averaged albedo vs MRO dust
+        alb_v, alb_vs = np.nanmean(Al, axis=1), np.nanstd(Al, axis=1)
+        if dust is not None:
+            dv = np.array([(dust.get(l) if dust.get(l) is not None else np.nan)
+                           for l in labels], float)
+            ok = np.isfinite(dv) & np.isfinite(alb_v)
+            ax[2].errorbar(dv[ok], alb_v[ok], yerr=alb_vs[ok], fmt='o', ms=6,
+                           capsize=3, color='indianred', zorder=2)
+            for d_, a_, l_ in zip(dv[ok], alb_v[ok], np.array(labels)[ok]):
+                ax[2].annotate(l_, (d_, a_), fontsize=8, xytext=(4, 4), textcoords='offset points')
+            if ok.sum() > 2:
+                b = np.polyfit(dv[ok], alb_v[ok], 1)
+                xx = np.linspace(np.nanmin(dv[ok]), np.nanmax(dv[ok]), 50)
+                ax[2].plot(xx, np.polyval(b, xx), color='gray', lw=1, alpha=0.6)
+                r = np.corrcoef(dv[ok], alb_v[ok])[0, 1]
+                ax[2].set_title(f'per visit: slope={b[0]:.2e}, r={r:.2f}', fontsize=9)
+        else:
+            ax[2].text(0.5, 0.5, 'pass dust={visit: MRO dust} for panel 3',
+                       ha='center', va='center', transform=ax[2].transAxes, color='gray')
+        ax[2].set_xlabel('MRO column dust optical depth')
+        ax[2].set_ylabel(r'band-avg albedo $p$ (per visit)')
+        ax[2].grid(True, ls='--', lw=0.5, alpha=0.5)
 
         fig.tight_layout()
         if save:
