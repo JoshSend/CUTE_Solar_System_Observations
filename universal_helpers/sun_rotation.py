@@ -70,7 +70,7 @@ HSRS_BASE = 'https://lasp.colorado.edu/lisird/latis/dap/tsis1_hsrs.csv'
 R_SIM, R_HSRS = 300.0, 28000.0     # SIM resolution; HSRS native (NUV) ~ R28000
 
 # ---- MAVEN EUVM date selection -------------------------------------------------
-DATE_METHOD  = 'geometric'            # 'maven' (EUVM cross-correlation) or 'geometric'
+DATE_METHOD  = 'maven'            # 'maven' (EUVM cross-correlation) or 'geometric'
 MAVEN_BASE   = 'https://pds-ppi.igpp.ucla.edu/data/maven-euv-modelled/data/daily'
 MAVEN_VER    = 'v18_r01'          # PDS version/revision token in the CDF filenames
 MAVEN_CACHE  = os.path.join(_HERE, '_maven_cache')   # downloaded daily CDFs cached here

@@ -41,7 +41,7 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'solar_diff' :
 #   'cutevsolar' :
 
-MODE = "cutevsolar"
+MODE = 'cutevsolar'
 
 # save figures/GIFs to the output folder
 SAVE = False
@@ -52,7 +52,7 @@ FIT_WEIGHTED = False
 
 # used by 'static' and 'visit':
 #   input visit folder name str
-VISIT = 'Visit3' # e.g. "Visit2" or "Visit3" or ...
+VISIT = 'Visit1' # e.g. "Visit2" or "Visit3" or ...
 
 # used by 'static':
 #   input file name str OR specific frame id as an int
