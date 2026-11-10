@@ -31,17 +31,19 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'grid'       : grid movie, one 1D-spectrum panel per visit in GRID_VISITS.
 #   'sequence'   : one 1D-spectrum panel that plays every frame of each visit
 #                  in turn, Visit1 -> ... -> Visit9.
+
 #   'bright'     : Brightest frame plotting
 #   'bright_all' : 
-#   
+#
 #   'solar'      : Solar overlay plotting
 #   'solar_all'  : 
 #   'solar_grid' :
 #   'reflect_all': Cross-visit solar reflectance
 #   'solar_diff' :
 #   'cutevsolar' :
+#   'solar_visit': integrated solar flux v visit
 
-MODE = 'cutevsolar'
+MODE = 'solar_visit'
 
 # save figures/GIFs to the output folder
 SAVE = False
@@ -95,7 +97,7 @@ SOLAR_MODE  = 'reflectance'
 
 # --- random ---
 box_pts = 15 # Boxcar smoothing for 1D spectra
-fps = 2 # Frames per second for gifs.
+fps = 5 # Frames per second for gifs.
 CuteObservation.SCI_HALF = None # Half of science trace region. 
                                 # int for specified, none for adaptive.
                                 # recommended 8, but x<14
@@ -155,8 +157,8 @@ def _f_slit_for(visit, frmid):
     return slit_fill_fraction(across, along, MARS_EARTH_AU[visit])
 
 def _brightness_csv(visit):
-    return _get_output_dir(output_dir,
-                           os.path.join('Spectra', visit, 'csv'))
+    sub = 'Spectra_fit' if FIT else 'Spectra'
+    return _get_output_dir(output_dir, os.path.join(sub, visit, 'csv'))
  
 def _visit_out(visit):
     """output/Spectra/<Visit>/ -- products belonging to one visit."""
@@ -367,6 +369,18 @@ def main():
         out = _get_output_dir(os.path.join(output_dir, 'cute_v_solar')) if SAVE else None
         CuteObservation.plot_cute_v_solar(items, dust=DUST, save=SAVE,
                                           output_dir=out, show=not SAVE)
+
+    elif MODE == 'solar_visit':
+        items = []
+        for v, fid in BRIGHTEST.items():
+            hits = glob.glob(os.path.join(_brightness_csv(v), f"*frmid_{fid}*.csv"))
+            sf = os.path.join(SOLAR_DIR, f"{v.lower()}_solar_spectrum.csv")
+            if hits and os.path.exists(sf):
+                items.append((v, hits[0], sf))
+            else:
+                print(f"  {v}: missing CUTE CSV or solar file, skipping")
+        out = _get_output_dir(os.path.join(output_dir, 'solar_visit')) if SAVE else None
+        CuteObservation.plot_solar_vs_visit(items, save=SAVE, output_dir=out, show=not SAVE)
 
     else:
         raise ValueError(

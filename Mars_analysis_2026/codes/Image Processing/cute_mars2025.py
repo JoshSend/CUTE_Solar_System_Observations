@@ -448,6 +448,15 @@ class CuteObservation:
     _bright_cache = {}       # visit -> (wave, flux, err), reduced once
     _fit_scale_printed = set()
 
+    # ---- hot-pixel rejection ----
+    HOT_REJECT   = True        # drop hot pixels from the science & dark regions
+    HOT_WIN      = 7           # median-filter window along dispersion (odd, >=3)
+    HOT_SIGMA    = 5.0         # reject pixels > this many robust sigma above local median
+    APERTURE_SUM = True        # True: store n_sc*(mean_sci - mean_dk) (aperture sum, keeps
+                               #       the flux scale). False: store the raw per-pixel mean
+                               #       difference (rescales flux/albedo by ~1/n_sc).
+    _hot_printed = set()
+
     def __init__(
         self, fits_fname, reference: CuteReference, visit=None, base_dir=None,
         track=True, widen=True,
@@ -590,6 +599,18 @@ class CuteObservation:
         return center - nominal, fwhm
 
     # --------- reduction ---------
+
+    def _build_hot_mask(self):
+        """Boolean hot-pixel mask: isolated positive spikes relative to the local
+        median along the DISPERSION direction, so the smoothly-varying spectrum and
+        the cross-dispersion trace profile are preserved (the trace is never flagged)."""
+        from scipy.ndimage import median_filter
+        img = self.img.astype(float)
+        w = max(int(self.HOT_WIN) | 1, 3)                       # odd window, >= 3
+        resid = img - median_filter(img, size=(1, w), mode='nearest')
+        mad = np.median(np.abs(resid - np.median(resid))) + 1e-9
+        return resid > self.HOT_SIGMA * 1.4826 * mad
+    
     def extract_spectrum(self):
         dk_arr = np.zeros(2048, dtype=float)
         sc_arr = np.zeros(2048, dtype=float)
@@ -599,30 +620,54 @@ class CuteObservation:
         rn2 = self.READ_NOISE ** 2
         clamp = lambda v: min(max(int(round(v)), 0), nrows)
 
+        hot = self._build_hot_mask() if self.HOT_REJECT else np.zeros(self.img.shape, bool)
+        self.n_hot_sci = self.n_hot_dk = 0
+
         for i in range(2048):
             col = self.xval[i]
 
+            # ---- dark strip: mean of hot-pixel-free pixels ----
             yy1, yy2 = clamp(self.yval1_dk[i]), clamp(self.yval2_dk[i])
-            n_dk = yy2 - yy1
-            dk_arr[i] = np.median(self.img[yy1:yy2, col]) if n_dk > 0 else 0.0
+            dk_pix = self.img[yy1:yy2, col].astype(float)
+            dk_hot = hot[yy1:yy2, col]
+            self.n_hot_dk += int(dk_hot.sum())
+            dk_good = dk_pix[~dk_hot]
+            if dk_good.size == 0:
+                dk_good = dk_pix                         # all flagged -> keep all
+            n_dk = dk_good.size
+            m_dk = float(dk_good.mean()) if n_dk else 0.0
+            dk_arr[i] = m_dk
 
+            # ---- science box: mean of hot-pixel-free pixels ----
             yy3, yy4 = clamp(self.yval1_sc[i]), clamp(self.yval2_sc[i])
-            n_sc = yy4 - yy3
-            if n_sc > 0:
-                box_sum = float(np.sum(self.img[yy3:yy4, col]))   # DN, source+bkg
-                sc_arr[i] = box_sum - n_sc * dk_arr[i]            # dark-subtracted
+            n_sc = yy4 - yy3                             # full aperture height (rows)
+            if n_sc <= 0:
+                continue
+            sc_pix = self.img[yy3:yy4, col].astype(float)
+            sc_hot = hot[yy3:yy4, col]
+            self.n_hot_sci += int(sc_hot.sum())
+            sc_good = sc_pix[~sc_hot]
+            if sc_good.size == 0:
+                sc_good = sc_pix
+            n_sc_good = sc_good.size
+            m_sc = float(sc_good.mean())
 
-                # CCD aperture-sum error: Poisson of all electrons in the box,
-                # read noise per science pixel, and the uncertainty in the
-                # background level estimated from n_dk dark pixels.
-                total_e = g * box_sum
-                bkg_e = g * dk_arr[i]
-                var_e = total_e + n_sc * rn2
-                if n_dk > 0:
-                    var_e += (n_sc ** 2) * (bkg_e + rn2) / n_dk
-                err_arr[i] = np.sqrt(max(var_e, 0.0)) / g         # back to DN
+            sig = m_sc - m_dk                           # per-pixel dark-subtracted signal
+            sc_arr[i] = (n_sc * sig) if self.APERTURE_SUM else sig
+
+            # error on the mean-difference signal (e- -> DN), scaled to the aperture
+            var_sc = (g * max(m_sc, 0.0) + rn2) / g ** 2 / max(n_sc_good, 1)
+            var_dk = (g * max(m_dk, 0.0) + rn2) / g ** 2 / max(n_dk, 1)
+            scale = n_sc if self.APERTURE_SUM else 1.0
+            err_arr[i] = scale * np.sqrt(max(var_sc + var_dk, 0.0))
 
         self.sc_err_dn = err_arr
+        if self.HOT_REJECT:
+            key = (self.visit, self.frame_id)
+            if key not in type(self)._hot_printed:
+                type(self)._hot_printed.add(key)
+                print(f"  {self.visit} frmid {self.frame_id}: hot pixels removed "
+                      f"(science {self.n_hot_sci}, dark {self.n_hot_dk})")
         return sc_arr
 
     def _compute_flux(self):
@@ -983,7 +1028,7 @@ class CuteObservation:
         return fig, ax
 
     @classmethod
-    def plot_reflectance_grid(cls, items, ncols=4, xlim=(2490, 3250), ymax=0.25,
+    def plot_reflectance_grid(cls, items, ncols=4, xlim=(2490, 3250), ymax=0.12,
                               share_ylim=True,
                               suptitle="2025 Mars NUV Geometric Albedo",
                               save=False, output_dir=None,
@@ -1011,7 +1056,7 @@ class CuteObservation:
             ax.set_xlim(xlim)
             ax.grid(True, ls='--', lw=0.5, alpha=0.5)
             if share_ylim:
-                ax.set_ylim(0, ymax)
+                ax.set_ylim(0, 0.15)
 
         for i, ax in enumerate(axes_flat[:n]):
             if i + ncols >= n:
@@ -1029,6 +1074,58 @@ class CuteObservation:
         if show:
             plt.show()
         return fig, axes
+
+    @classmethod
+    def plot_solar_vs_visit(cls, items, wmin=2900.0, wmax=3300.0, cmap='plasma',
+                            figsize=(8, 9), save=False, output_dir=None,
+                            fname='solar_vs_visit.png', dpi=200, show=True):
+        """Two panels vs visit number, each integrated over [wmin, wmax]:
+          top: integrated observed CUTE flux
+          bot: integrated solar flux at Mars (W/m^2)
+        items: (label, cute_csv, solar_file, ...)."""
+        import re
+        trap = np.trapezoid if hasattr(np, 'trapezoid') else np.trapz
+        vnum = lambda l: (int(re.search(r'(\d+)', str(l)).group(1))
+                          if re.search(r'(\d+)', str(l)) else -1)
+        items = sorted(items, key=lambda it: vnum(it[0]))
+        vn, fobs, fsol, labels = [], [], [], []
+        for (label, cc, sf, *_rest) in items:
+            d = np.genfromtxt(cc, delimiter=',', names=True)      # observed CUTE flux
+            nmn = d.dtype.names
+            cw = np.asarray(d['wave'] if 'wave' in nmn else d[nmn[0]], float)
+            cf = np.asarray(d['flux'] if 'flux' in nmn else d[nmn[1]], float)
+            mc = (cw >= wmin) & (cw <= wmax) & np.isfinite(cf)
+            fobs.append(float(trap(cf[mc], cw[mc])))
+            s = np.genfromtxt(sf, delimiter=',', comments='#')    # solar at Mars
+            wl_nm, sflux = s[:, 0], s[:, 1]
+            ms = (wl_nm >= wmin / 10.0) & (wl_nm <= wmax / 10.0) & np.isfinite(sflux)
+            fsol.append(float(trap(sflux[ms], wl_nm[ms])))
+            vn.append(vnum(label)); labels.append(label)
+        vn = np.array(vn); fobs = np.array(fobs); fsol = np.array(fsol)
+        cidx = np.arange(len(vn))
+
+        def _p(a, y, ylab, title):
+            a.plot(vn, y, color='0.6', lw=0.8, alpha=0.5, zorder=1)
+            a.scatter(vn, y, c=cidx, cmap=cmap, s=55, edgecolor='k', lw=0.3, zorder=3)
+            for x, yy, l in zip(vn, y, labels):
+                a.annotate(l, (x, yy), fontsize=8, xytext=(4, 4), textcoords='offset points')
+            a.set_ylabel(ylab); a.set_xticks(vn); a.set_title(title, fontsize=10)
+            a.grid(True, ls='--', lw=0.5, alpha=0.5)
+
+        fig, ax = plt.subplots(2, 1, figsize=figsize, sharex=True)
+        fig.suptitle(f'{wmin:.0f}\u2013{wmax:.0f} \u00c5', fontsize=12)
+        _p(ax[0], fobs, 'integrated observed flux (CUTE)', 'observed flux vs visit')
+        _p(ax[1], fsol, r'integrated solar flux at Mars (W m$^{-2}$)', 'solar flux vs visit')
+        ax[1].set_xlabel('visit number')
+        fig.tight_layout()
+        if save:
+            os.makedirs(output_dir, exist_ok=True)
+            path = os.path.join(output_dir, fname)
+            fig.savefig(path, dpi=dpi, bbox_inches='tight')
+            print(f"Saved {path}")
+        if show:
+            plt.show()
+        return fig, ax
 
     @classmethod
     def plot_mars_solar_overlay(cls, cute_csv, solar_file, mars_earth_au=None,
@@ -1324,7 +1421,7 @@ class CuteObservation:
         return fig, ax
 
     @classmethod
-    def plot_cute_v_solar(cls, items, dust=None, wmin=2900.0, wmax=3300.0, n_grid=200,
+    def plot_cute_v_solar(cls, items, dust=None, wmin=2500.0, wmax=3300.0, n_grid=200,
                           figsize=(13, 10), cmap='plasma', save=False, output_dir=None,
                           fname='cute_v_solar.png', dpi=200, show=True, **refl_kw):
         """
@@ -1337,7 +1434,7 @@ class CuteObservation:
         items: (label, cute_csv, solar_file, mars_earth_au, phase_angle, f_slit).
         dust: {visit_label: value} (None -> panel [1,1] blank).
         """
-        trap = np.trapezoid if hasattr(np, 'trapezoid') else np.trapz
+        trap = np.trapezoid if hasattr(np, 'trapezoid') else np.trapz #np.trapz depreciated
         fsol_i, fcute_i, alb_m, alb_s, labels = [], [], [], [], []
         for (label, cc, sf, dae, pa, fsl) in items:
             cw, refl, sh, cute_m, solar_on_cw, _ = cls.reflectance_curve(
@@ -1357,7 +1454,7 @@ class CuteObservation:
 
         def _panel(a, x, y, yerr=None, c=cidx):
             if yerr is not None:
-                a.errorbar(x, y, yerr=yerr, fmt='none', ecolor='0.6', alpha=0.6, zorder=1)
+                a.errorbar(x, y, yerr=yerr, fmt='none', ecolor='0.6', alpha=0.6, zorder=1, label=r'$\pm 1 \sigma$')
             a.scatter(x, y, c=c, cmap=cmap, s=45, zorder=3, edgecolor='k', lw=0.3)
             for xi, yi, l in zip(x, y, np.asarray(labels)):
                 a.annotate(l, (xi, yi), fontsize=8, xytext=(4, 4), textcoords='offset points')
@@ -1382,6 +1479,7 @@ class CuteObservation:
 
         # [0,1] albedo vs solar flux
         _panel(ax[0, 1], fsol_i, alb_m, yerr=alb_s)
+        ax[0, 1].legend()
         ax[0, 1].set_title('albedo vs solar flux')
         ax[0, 1].set_xlabel('integrated solar flux (per visit)')
         ax[0, 1].set_ylabel('band-avg albedo (per visit)')
@@ -1392,9 +1490,9 @@ class CuteObservation:
             bv = np.polyfit(fsol_i[fitm], alb_var[fitm], 1)
             xxv = np.linspace(fsol_i.min(), fsol_i.max(), 50)
             rv = np.corrcoef(fsol_i[fitm], alb_var[fitm])[0, 1]
-            ax[1, 0].plot(xxv, np.polyval(bv, xxv), color='0.4', lw=1.2, alpha=0.8, zorder=2,
-                          label=f'linear fit (w/o Visit1): slope={bv[0]:.2e}, r={rv:.2f}')
-            ax[1, 0].legend(fontsize=8, loc='upper right')
+            # ax[1, 0].plot(xxv, np.polyval(bv, xxv), color='0.4', lw=1.2, alpha=0.8, zorder=2,
+            #               label=f'linear fit (w/o Visit1): slope={bv[0]:.2e}, r={rv:.2f}')
+            # ax[1, 0].legend(fontsize=8, loc='upper right')
         ax[1, 0].set_title('albedo variance vs solar flux')
         ax[1, 0].set_xlabel('integrated solar flux (per visit)')
         ax[1, 0].set_ylabel('albedo variance across band (per visit)')

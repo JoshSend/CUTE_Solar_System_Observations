@@ -3,14 +3,16 @@ Errors are standard deviations on y axis
 Latest MRO optical dust depth is Feb 2023 to Nov 2024,
 outside of CUTE Mars observations
 
-top: 
-corrected CUTE flux (as in the fitted) v avg solar flux
-bottom:
+Hot pixels in CUTE data
+After building regions determine # of hot pixels in sci and dk regions, match col by col,
+mean in both (hot pixels removed), subtract one from another for bckgrnd subtracted value for col
+No hot pixels with values >= some value
 
-top -> sol flux v cute flux integrated over the region
-bot -> sol fluv v cute albedo visit avg int over region
+Check for fudge factors when counts are converted to flux units
 
+\\ Integrate solar flux v visit number
 
-change in albedo as func of time, 
-but is it tracking a change in CUTE_obs, the Sun,
-or ratio?
+==============================================
+
+Recall ratio change
+\frac{F_{CUTE}}{F_SOL} for albedo && percentage of Mars' disk
