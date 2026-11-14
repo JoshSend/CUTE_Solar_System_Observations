@@ -3,12 +3,7 @@ Errors are standard deviations on y axis
 Latest MRO optical dust depth is Feb 2023 to Nov 2024,
 outside of CUTE Mars observations
 
-
-
 ==============================================
-
-Recall ratio change
-\frac{F_{CUTE}}{F_SOL} for albedo && percentage of Mars' disk
 
 plot for num of hot pixels per col removed
 

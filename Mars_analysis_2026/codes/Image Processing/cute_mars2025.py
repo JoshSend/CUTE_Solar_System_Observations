@@ -895,13 +895,20 @@ class CuteObservation:
         return saved
 
     def save_spectrum_csv(self, output_dir):
-        """Write this frame's 1D spectrum as wave,flux,error (one row per pixel)."""
+        """One self-contained file per frame: wave,flux,err,n_hot per pixel, with the
+        frame DATE_OBS as a trailing comment. Read by reflectance_curve and the
+        per-frame/orbit analysis alike."""
         os.makedirs(output_dir, exist_ok=True)
         stem = os.path.splitext(os.path.basename(self.fits_fname))[0]
         path = os.path.join(output_dir, f"{stem}{self.fit_tag()}.csv")
-        arr = np.column_stack([self.reference.wv_soln, self.flux, self.flux_err])
-        np.savetxt(path, arr, delimiter=',', header='wave,flux,err',
-                   comments='', fmt='%.6e')
+        wave = self.reference.wv_soln
+        nhot = (getattr(self, 'n_hot_sci_col', np.zeros(len(wave), int)) +
+                getattr(self, 'n_hot_dk_col', np.zeros(len(wave), int)))
+        with open(path, 'w') as f:
+            f.write("wave,flux,err,n_hot\n")
+            for w, fl, e, nh in zip(wave, self.flux, self.flux_err, nhot):
+                f.write(f"{w:.6e},{fl:.6e},{e:.6e},{int(nh)}\n")
+            f.write(f"# DATE_OBS={getattr(self, 'date_obs', None)}\n")
         return path
 
     @classmethod
@@ -1688,6 +1695,119 @@ class CuteObservation:
             print(f"Saved {path}")
         plt.show()
         return fig, axes
+
+    # ---------- per-frame / orbit analysis (reads the merged per-frame CSVs) ----------
+    @staticmethod
+    def _parse_date(s):
+        import datetime as _dt
+        if not s or str(s).strip().lower() in ('none', 'nan', ''):
+            return np.nan
+        s = str(s).strip().replace('Z', '')
+        try:
+            return _dt.datetime.fromisoformat(s).timestamp()
+        except Exception:
+            try:
+                return _dt.datetime.strptime(s[:19], '%Y-%m-%dT%H:%M:%S').timestamp()
+            except Exception:
+                return np.nan
+
+    @staticmethod
+    def _read_frame_csv(path):
+        """(wave, flux, n_hot, date_obs) from a merged per-frame spectrum CSV."""
+        date = None
+        with open(path) as fh:
+            for line in fh:
+                if line.lstrip().startswith('#') and 'DATE_OBS' in line:
+                    date = line.split('=', 1)[1].strip(); break
+        d = np.genfromtxt(path, delimiter=',', names=True, comments='#')
+        nm = d.dtype.names
+        wave = np.asarray(d['wave'] if 'wave' in nm else d[nm[0]], float)
+        flux = np.asarray(d['flux'] if 'flux' in nm else d[nm[1]], float)
+        nhot = np.asarray(d['n_hot'], float) if 'n_hot' in nm else np.zeros_like(wave)
+        return wave, flux, nhot, date
+
+    @classmethod
+    def _visit_frames(cls, csv_dir, wmin, wmax):
+        """Per-frame (frmid, time_s, integrated_flux) for a visit's CSVs, time-sorted
+        (falls back to frmid order if DATE_OBS is missing)."""
+        import glob, re
+        trap = np.trapezoid if hasattr(np, 'trapezoid') else np.trapz
+        fids, times, flux = [], [], []
+        for p in sorted(glob.glob(os.path.join(csv_dir, '*.csv'))):
+            wave, fx, nh, date = cls._read_frame_csv(p)
+            b = (wave >= wmin) & (wave <= wmax) & np.isfinite(fx)
+            if not b.any():
+                continue
+            flux.append(float(trap(fx[b], wave[b])))
+            m = re.search(r'frmid[_-]?(\d+)', os.path.basename(p))
+            fids.append(int(m.group(1)) if m else -1)
+            times.append(cls._parse_date(date))
+        fids = np.array(fids); times = np.array(times, float); flux = np.array(flux)
+        key = np.where(np.isfinite(times), times, fids.astype(float))
+        o = np.argsort(key)
+        return fids[o], times[o], flux[o]
+
+    @staticmethod
+    def _orbit_index(times_s, period_s=5400.0):
+        t = np.asarray(times_s, float)
+        if not np.isfinite(t).any():
+            return np.zeros(len(t), int)
+        return np.floor((t - np.nanmin(t)) / period_s).astype(int)
+
+    @classmethod
+    def _frame_grid(cls, items, kind, wmin=2900.0, wmax=3300.0, orbit_period_s=5400.0,
+                    ncols=4, cmap='tab10', figsize=None, save=False, output_dir=None,
+                    fname='frames.png', dpi=200, show=True):
+        """Grid, one panel per visit. kind: 'frame' | 'power' | 'loo'."""
+        n = len(items); nrows = int(np.ceil(n / ncols))
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize or (4 * ncols, 3 * nrows),
+                                 squeeze=False)
+        axf = axes.ravel()
+        for ax in axf[n:]:
+            ax.axis('off')
+        for ax, (label, csv_dir) in zip(axf, items):
+            fids, times, flux = cls._visit_frames(csv_dir, wmin, wmax)
+            if flux.size == 0:
+                ax.text(0.5, 0.5, f'{label}\n(no CSVs)', ha='center', va='center',
+                        transform=ax.transAxes); ax.set_title(label, fontsize=9); continue
+            orb = cls._orbit_index(times, orbit_period_s)
+            if kind == 'frame':
+                ax.scatter(np.arange(len(flux)), flux, c=orb, cmap=cmap, s=40,
+                           edgecolor='k', lw=0.3)
+                ax.set_xlabel('frame (time order)'); ax.set_ylabel('integrated flux')
+            elif kind == 'power':
+                uo = np.unique(orb)
+                mp = np.array([flux[orb == o].mean() for o in uo])
+                sp = np.array([flux[orb == o].std() for o in uo])
+                ax.errorbar(uo, mp, yerr=sp, fmt='o', ms=7, capsize=4, color='steelblue')
+                ax.set_xlabel('orbit (~90 min)'); ax.set_ylabel('mean power'); ax.set_xticks(uo)
+            elif kind == 'loo':
+                loo = np.array([np.mean(np.delete(flux, i)) for i in range(len(flux))])
+                ax.axhline(flux.mean(), color='0.6', ls='--', lw=1)
+                ax.scatter(fids, loo, c=orb, cmap=cmap, s=40, edgecolor='k', lw=0.3)
+                ax.set_xlabel('frame excluded (frmid)'); ax.set_ylabel('visit mean w/o frame')
+            ax.set_title(label, fontsize=9); ax.grid(True, ls='--', lw=0.5, alpha=0.5)
+        fig.suptitle(f'{wmin:.0f}\u2013{wmax:.0f} \u00c5', fontsize=12)
+        fig.tight_layout()
+        if save:
+            os.makedirs(output_dir, exist_ok=True)
+            fig.savefig(os.path.join(output_dir, fname), dpi=dpi, bbox_inches='tight')
+            print(f"Saved {os.path.join(output_dir, fname)}")
+        if show:
+            plt.show()
+        return fig, axes
+
+    @classmethod
+    def plot_frame_flux(cls, items, **kw):
+        kw.setdefault('fname', 'frame_flux.png'); return cls._frame_grid(items, 'frame', **kw)
+
+    @classmethod
+    def plot_power_grid(cls, items, **kw):
+        kw.setdefault('fname', 'power_grid.png'); return cls._frame_grid(items, 'power', **kw)
+
+    @classmethod
+    def plot_leave_one_out(cls, items, **kw):
+        kw.setdefault('fname', 'leave_one_out.png'); return cls._frame_grid(items, 'loo', **kw)
 
     # ---- palette reused from the overlay plots -------------------------------
     OVERLAY_COLORS = plt.cm.viridis(np.linspace(0, 0.85, 12))

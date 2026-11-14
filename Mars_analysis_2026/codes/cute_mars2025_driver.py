@@ -31,7 +31,7 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'grid'       : grid movie, one 1D-spectrum panel per visit in GRID_VISITS.
 #   'sequence'   : one 1D-spectrum panel that plays every frame of each visit
 #                  in turn, Visit1 -> ... -> Visit9.
-
+#
 #   'bright'     : Brightest frame plotting
 #   'bright_all' : 
 #
@@ -42,8 +42,12 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'solar_diff' :
 #   'cutevsolar' :
 #   'solar_visit': integrated solar flux v visit
+#
+#   'frame_flux' :
+#   'power_grid' :
+# 'leave_one_out':
 
-MODE = 'cutevsolar'
+MODE = 'leave_one_out'
 
 # save figures/GIFs to the output folder
 SAVE = False
@@ -381,6 +385,14 @@ def main():
                 print(f"  {v}: missing CUTE CSV or solar file, skipping")
         out = _get_output_dir(os.path.join(output_dir, 'solar_visit')) if SAVE else None
         CuteObservation.plot_solar_vs_visit(items, save=SAVE, output_dir=out, show=not SAVE)
+
+    elif MODE in ('frame_flux', 'power_grid', 'leave_one_out'):
+        items = [(v, _brightness_csv(v)) for v in GRID_VISITS]
+        out = _get_output_dir(os.path.join(output_dir, MODE)) if SAVE else None
+        {'frame_flux': CuteObservation.plot_frame_flux,
+         'power_grid': CuteObservation.plot_power_grid,
+         'leave_one_out': CuteObservation.plot_leave_one_out}[MODE](
+            items, save=SAVE, output_dir=out, show=not SAVE)
 
     else:
         raise ValueError(
