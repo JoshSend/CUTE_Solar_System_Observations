@@ -3,16 +3,17 @@ Errors are standard deviations on y axis
 Latest MRO optical dust depth is Feb 2023 to Nov 2024,
 outside of CUTE Mars observations
 
-Hot pixels in CUTE data
-After building regions determine # of hot pixels in sci and dk regions, match col by col,
-mean in both (hot pixels removed), subtract one from another for bckgrnd subtracted value for col
-No hot pixels with values >= some value
 
-Check for fudge factors when counts are converted to flux units
-
-\\ Integrate solar flux v visit number
 
 ==============================================
 
 Recall ratio change
 \frac{F_{CUTE}}{F_SOL} for albedo && percentage of Mars' disk
+
+plot for num of hot pixels per col removed
+
+Test if frame is outlier
+"leave one out analysis"
+Avg orbits: T = ~90min
+
+Power output across visits

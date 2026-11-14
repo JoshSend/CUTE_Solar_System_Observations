@@ -43,7 +43,7 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'cutevsolar' :
 #   'solar_visit': integrated solar flux v visit
 
-MODE = 'solar_visit'
+MODE = 'cutevsolar'
 
 # save figures/GIFs to the output folder
 SAVE = False
@@ -339,7 +339,7 @@ def main():
             else:
                 print(f"  {v}: missing CUTE CSV or solar file, skipping")
         out = _get_output_dir(os.path.join(output_dir, 'solar_overlay')) if SAVE else None
-        CuteObservation.plot_reflectance_grid(items, save=SAVE, output_dir=out, show=not SAVE, ymax=0.3)
+        CuteObservation.plot_reflectance_grid(items, save=SAVE, output_dir=out, show=not SAVE)
 
     elif MODE == 'solar_diff':
         items = []

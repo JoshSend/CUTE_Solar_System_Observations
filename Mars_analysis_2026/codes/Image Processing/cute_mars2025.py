@@ -23,6 +23,8 @@ from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import Normalize
 
+import matplotlib.ticker as ticker
+
 from numpy.polynomial import legendre as _Leg
 
 # Turn off matplotlib's auto interpolation for all images
@@ -1028,9 +1030,9 @@ class CuteObservation:
         return fig, ax
 
     @classmethod
-    def plot_reflectance_grid(cls, items, ncols=4, xlim=(2490, 3250), ymax=0.12,
+    def plot_reflectance_grid(cls, items, ncols=4, xlim=(2500, 3300), ymax=0.10,
                               share_ylim=True,
-                              suptitle="2025 Mars NUV Geometric Albedo",
+                              suptitle="2025 Mars NUV Albedo (Brightest Frames)",
                               save=False, output_dir=None,
                               fname='albedo_grid.png', dpi=200, show=True):
         """items: list of (label, cute_csv, solar_file, mars_earth_au, phase_angle_deg)."""
@@ -1043,26 +1045,30 @@ class CuteObservation:
         axes_flat = axes.ravel()
         for ax in axes_flat[n:]:
             ax.axis('off')
+
         fig.suptitle(suptitle, fontsize=16)
 
-        for ax, (label, cc, sf, dae, pa, fsl) in zip(axes_flat, items):
+        # Use enumerate to get an index 'i' for each item
+        for i, (ax, (label, cc, sf, dae, pa, fsl)) in enumerate(zip(axes_flat, items)):
             cw, refl, sh, wb, pb, eb = cls.reflectance_curve(
                 cc, sf, dae, phase_angle=pa, f_slit=fsl, xlim=xlim)
-            ax.plot(cw, refl, color='maroon', lw=0.7, alpha=0.45)        # full ratio
-            # ax.fill_between(wb, pb - eb, pb + eb, color='royalblue',
-            #                 alpha=0.25, zorder=4)                        # 1-sigma band
-            # ax.plot(wb, pb, color='royalblue', lw=1.8, zorder=5) 
+            
+            # Select a distinct color (modulus 10 wraps around if you have more than 10 items)
+            color = plt.cm.tab10(i % 10)
+            
+            ax.plot(cw, refl, color=color, lw=1, alpha=1)        # full ratio with unique color
             ax.set_title(f"{label}  (a={pa:.1f} deg, shift {sh:+.1f} A)", fontsize=9)
             ax.set_xlim(xlim)
+            ax.xaxis.set_major_locator(ticker.MultipleLocator(100))
             ax.grid(True, ls='--', lw=0.5, alpha=0.5)
             if share_ylim:
-                ax.set_ylim(0, 0.15)
+                ax.set_ylim(0, ymax)
 
         for i, ax in enumerate(axes_flat[:n]):
             if i + ncols >= n:
                 ax.set_xlabel(r"Wavelength ($\AA$)", fontsize=9)
         for r in range(nrows):
-            axes[r, 0].set_ylabel(r"Geometric albedo $p$", fontsize=9)
+            axes[r, 0].set_ylabel("Geometric albedo", fontsize=9)
 
         if save:
             if output_dir is None:
