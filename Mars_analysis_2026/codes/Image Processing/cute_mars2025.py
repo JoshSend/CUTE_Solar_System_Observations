@@ -624,6 +624,8 @@ class CuteObservation:
 
         hot = self._build_hot_mask() if self.HOT_REJECT else np.zeros(self.img.shape, bool)
         self.n_hot_sci = self.n_hot_dk = 0
+        self.n_hot_sci_col = np.zeros(2048, dtype=int)
+        self.n_hot_dk_col  = np.zeros(2048, dtype=int)
 
         for i in range(2048):
             col = self.xval[i]
@@ -632,7 +634,8 @@ class CuteObservation:
             yy1, yy2 = clamp(self.yval1_dk[i]), clamp(self.yval2_dk[i])
             dk_pix = self.img[yy1:yy2, col].astype(float)
             dk_hot = hot[yy1:yy2, col]
-            self.n_hot_dk += int(dk_hot.sum())
+            self.n_hot_dk_col[i] = int(dk_hot.sum())
+            self.n_hot_dk += self.n_hot_dk_col[i]
             dk_good = dk_pix[~dk_hot]
             if dk_good.size == 0:
                 dk_good = dk_pix                         # all flagged -> keep all
@@ -647,7 +650,8 @@ class CuteObservation:
                 continue
             sc_pix = self.img[yy3:yy4, col].astype(float)
             sc_hot = hot[yy3:yy4, col]
-            self.n_hot_sci += int(sc_hot.sum())
+            self.n_hot_sci_col[i] = int(sc_hot.sum())
+            self.n_hot_sci += self.n_hot_sci_col[i]
             sc_good = sc_pix[~sc_hot]
             if sc_good.size == 0:
                 sc_good = sc_pix
@@ -1538,6 +1542,35 @@ class CuteObservation:
             plt.show()
         return fig, ax
 
+    @classmethod
+    def plot_hotpix_grid(cls, items, ncols=4, figsize=None, save=False,
+                         output_dir=None, fname='hotpix_grid.png', dpi=200, show=True):
+        """Grid, one panel per visit's brightest frame: hot pixels removed per column
+        (y) vs wavelength / column (x). Reads the merged per-frame CSV's n_hot field."""
+        n = len(items); nrows = int(np.ceil(n / ncols))
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize or (4 * ncols, 3 * nrows),
+                                 squeeze=False, sharex=True, sharey=True)
+        axf = axes.ravel()
+        for ax in axf[n:]:
+            ax.axis('off')
+        for ax, (label, csv_path) in zip(axf, items):
+            wave, flux, nhot, date = cls._read_frame_csv(csv_path)
+            o = np.argsort(wave)
+            ax.plot(wave[o], nhot[o], color='firebrick', lw=0.9)
+            ax.fill_between(wave[o], 0, nhot[o], color='firebrick', alpha=0.25)
+            ax.set_title(f'{label}  (N={int(np.nansum(nhot))})', fontsize=9)
+            ax.set_xlabel('wavelength (\u00c5)'); ax.set_ylabel('hot pixels removed')
+            ax.grid(True, ls='--', lw=0.5, alpha=0.5)
+        fig.suptitle('Hot Pixels removed per Wavelength (Brightest frames)', fontsize=12)
+        fig.tight_layout()
+        if save:
+            os.makedirs(output_dir, exist_ok=True)
+            fig.savefig(os.path.join(output_dir, fname), dpi=dpi, bbox_inches='tight')
+            print(f"Saved {os.path.join(output_dir, fname)}")
+        if show:
+            plt.show()
+        return fig, axes
+
     # --------- frame-to-frame comparison ---------
     @classmethod
     def plot_visit_overlay(cls, visit, reference=None, ax=None, box_pts=15,
@@ -1802,12 +1835,50 @@ class CuteObservation:
         kw.setdefault('fname', 'frame_flux.png'); return cls._frame_grid(items, 'frame', **kw)
 
     @classmethod
-    def plot_power_grid(cls, items, **kw):
-        kw.setdefault('fname', 'power_grid.png'); return cls._frame_grid(items, 'power', **kw)
-
-    @classmethod
     def plot_leave_one_out(cls, items, **kw):
         kw.setdefault('fname', 'leave_one_out.png'); return cls._frame_grid(items, 'loo', **kw)
+
+    @classmethod
+    def plot_power_grid(cls, items, wmin=2900.0, wmax=3300.0, orbit_period_s=5400.0,
+                        cmap='tab10', figsize=(11, 5), save=False, output_dir=None,
+                        fname='power_grid.png', dpi=200, show=True):
+        """Single axes: integrated power for every visit on one plot, one x-slot per
+        visit. A visit that spans several orbits shows one point per orbit, offset
+        within its slot; error bar = std of the frames in that orbit."""
+        fig, ax = plt.subplots(figsize=figsize)
+        cols = plt.get_cmap(cmap)
+        xt, xl = [], []
+        for xi, (label, csv_dir) in enumerate(items):
+            fids, times, flux = cls._visit_frames(csv_dir, wmin, wmax)
+            xt.append(xi); xl.append(label)
+            if flux.size == 0:
+                continue
+            orb = cls._orbit_index(times, orbit_period_s)
+            uo = np.unique(orb)
+            if len(uo) > 1:
+                w = min(0.8, 0.16 * (len(uo) - 1))
+                offs = np.linspace(-w / 2, w / 2, len(uo))
+            else:
+                offs = np.zeros(1)
+            for oi, o in enumerate(uo):
+                fo = flux[orb == o]
+                ax.errorbar(xi + offs[oi], fo.mean(),
+                            yerr=(fo.std() if fo.size > 1 else 0.0),
+                            fmt='o', ms=7, capsize=4,
+                            color=cols(xi % 10), ecolor=cols(xi % 10))
+        ax.set_xticks(xt); ax.set_xticklabels(xl)
+        ax.set_yscale('log')
+        ax.set_xlabel('visit'); ax.set_ylabel('integrated power')
+        ax.set_title(f'{wmin:.0f}\u2013{wmax:.0f} \u00c5')
+        ax.grid(True, ls='--', lw=0.5, alpha=0.5)
+        fig.tight_layout()
+        if save:
+            os.makedirs(output_dir, exist_ok=True)
+            fig.savefig(os.path.join(output_dir, fname), dpi=dpi, bbox_inches='tight')
+            print(f"Saved {os.path.join(output_dir, fname)}")
+        if show:
+            plt.show()
+        return fig, ax
 
     # ---- palette reused from the overlay plots -------------------------------
     OVERLAY_COLORS = plt.cm.viridis(np.linspace(0, 0.85, 12))

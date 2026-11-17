@@ -46,6 +46,7 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'frame_flux' :
 #   'power_grid' :
 # 'leave_one_out':
+#   'hotpix_grid':
 
 MODE = 'leave_one_out'
 
@@ -393,6 +394,17 @@ def main():
          'power_grid': CuteObservation.plot_power_grid,
          'leave_one_out': CuteObservation.plot_leave_one_out}[MODE](
             items, save=SAVE, output_dir=out, show=not SAVE)
+
+    elif MODE == 'hotpix_grid':
+        items = []
+        for v, fid in BRIGHTEST.items():
+            hits = glob.glob(os.path.join(_brightness_csv(v), f"*frmid_{fid}*.csv"))
+            if hits:
+                items.append((v, hits[0]))
+            else:
+                print(f"  {v}: no CSV for frmid {fid}, skipping")
+        out = _get_output_dir(os.path.join(output_dir, 'hotpix_grid')) if SAVE else None
+        CuteObservation.plot_hotpix_grid(items, save=SAVE, output_dir=out, show=not SAVE)
 
     else:
         raise ValueError(
