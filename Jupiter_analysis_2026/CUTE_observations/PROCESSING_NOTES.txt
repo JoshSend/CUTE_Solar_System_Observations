@@ -1,0 +1,133 @@
+PROCESSING NOTES - Jupiter system (CUTE targetID 345)
+==============================================================================
+
+WHAT THIS REPOSITORY HOLDS
+------------------------------------------------------------------------------
+Only the PROCESSED frames are committed here, under Visit<N>/processed/. The
+raw frames they derive from are not in this repository; they live in the LASP
+archive at /Volumes/cute/fits_images/undefined_targetID and every processed
+file names its original in the FITS HISTORY. The visit layout described below
+therefore refers to the full local working set, not to this repository.
+
+Source : /Volumes/cute/fits_images/undefined_targetID
+Target : 345 = Jupiter (CUTE_master_target_list.xlsx). The Galilean-moon
+         pointings share this same target ID, so all 19 targetID345 frames in
+         the archive are included - that is the whole Jupiter system.
+Visits : per CUTE_flight_exposure_list_GammaLep_Jupiter_ZetaPup.xlsx, where
+         Jupiter shares an exposure list with Gamma Lep (125) and Zeta Pup (300)
+         and appears only in Visit1, Visit4 and Visit7.
+           Visit1 = frmid 1054-1057,  30 s, 2026-01-25
+           Visit4 = frmid 1137-1140, 350 s, 2026-02-19/20
+           Visit7 = frmid 1194-1203, 350 s, 2026-03-12
+
+LAYOUT
+------------------------------------------------------------------------------
+  Visit<N>/              raw frames that passed screening
+  Visit<N>/processed/    missing pixels interpolated (*_filled.fits)
+  Visit<N>/rejected/     frames discarded as un-interpolatable
+  Jupiter_JSON/          the three command plans, with their own README
+
+TWO DATA PRODUCTS
+------------------------------------------------------------------------------
+  TRIM2D  100 x 2200, complete at 446 packets  (standard trimmed product)
+  NOPROC  515 x 2200, complete at 2248 packets (full unprocessed detector)
+
+The TRIM2D frame is exactly NOPROC rows 187-286. Established by matching the
+fixed hot-pixel pattern between both products of one exposure (Jaccard 0.92 at
+offset 187 against 0.29 for the next-best) and confirmed by 188,946 commonly
+valid pixels agreeing bit-for-bit.
+
+Visit1 holds TRIM2D only; Visit4 holds both; Visit7 holds NOPROC only.
+
+REJECTION CRITERION  (relaxed, at the users request)
+------------------------------------------------------------------------------
+Discard a frame if either:
+  (a) max_dist > 5 px   - a missing pixel further than 5 px from any real pixel
+  (b) missing > 25%
+
+NOPROC frames are judged on the science region (rows 187-286), not the whole
+detector, because that band is the TRIM2D product. Frames 1139 and 1140 look
+poor over the full frame - 1140 has an 80-row dead swath, max_dist 83 - while
+their science regions are nearly clean (7.4% and 2.5% missing, max_dist 2).
+
+NOTE: these limits are looser than the Uranus set, which used max_dist <= 3 px
+and missing <= 20%. They were relaxed deliberately so that Visit7 would retain
+more than a single exposure. Ground-truth testing (real loss masks applied to
+the complete 446-packet frames, then interpolated and compared with truth)
+gives, for the extracted 1-D spectrum:
+      3.4% missing -> p95 error 1.1%      8.8% missing -> p95 error 2.2%
+     17.5% missing -> p95 error 3.2%     21.3% missing -> p95 error 3.6%
+     24.9% missing -> p95 error ~3.9%    33.7% missing -> p95 error 4.8%
+
+So the frames admitted by the relaxed cut carry up to roughly 4% p95 error in
+the extracted spectrum, against under 2% for the frames the strict cut allowed.
+The QCMISS header keyword records each frames judged missing percentage; sort
+on it to work with only the high-fidelity subset.
+
+INTERPOLATION
+------------------------------------------------------------------------------
+Normalised convolution followed by Laplace relaxation, using only surrounding
+pixels, with radiation hits excluded as sources but left untouched in the data.
+Only missing pixels are replaced; every other pixel is bit-identical to the raw
+frame (verified for all 16 frames). Extension FILLMASK flags interpolated
+pixels. Headers carry NFILLED, FILLFRAC, FILLMETH, FILLMAXD (whole frame),
+FILLMAXS (science region) and QCMISS.
+
+CAUTION: in NOPROC frames the fill is trustworthy only inside rows 187-286.
+Frame 1140 fills an 80-row swath outside that band (FILLMAXD 83.4); such
+regions are smooth interpolation across a large hole, not data.
+
+The 65535 pixels are radiation hits and hot pixels, not saturated Jupiter
+signal: their frequency is flat across the detector (7.6-8.6% per row band)
+with no concentration at any spectral trace. They are left in place for the
+usual cosmic-ray rejection downstream.
+
+FRAME INVENTORY
+------------------------------------------------------------------------------
+visit   frmid  type    pkts   miss%    maxd   tier             decision
+Visit1  1054   TRIM2D  351    21.32    2.0    relaxed cut      keep
+Visit1  1054   TRIM2D  296    33.66    4.0    -                REJECT
+Visit1  1055   TRIM2D  431    3.37     1.0    high fidelity    keep
+Visit1  1055   TRIM2D  357    19.97    3.0    relaxed cut      keep
+Visit1  1056   TRIM2D  446    0.00     0.0    high fidelity    keep
+Visit1  1056   TRIM2D  407    8.75     2.0    high fidelity    keep
+Visit1  1057   TRIM2D  446    0.00     0.0    high fidelity    keep
+Visit1  1057   TRIM2D  368    17.50    3.0    relaxed cut      keep
+Visit4  1137   TRIM2D  446    0.05     1.0    high fidelity    keep
+Visit4  1138   NOPROC  1013   53.00    12.0   -                REJECT
+Visit4  1138   TRIM2D  446    0.00     0.0    high fidelity    keep
+Visit4  1139   NOPROC  1854   7.41     2.0    high fidelity    keep
+Visit4  1139   TRIM2D  445    0.22     1.0    high fidelity    keep
+Visit4  1140   NOPROC  1855   2.47     2.0    high fidelity    keep
+Visit4  1140   TRIM2D  428    4.04     2.0    high fidelity    keep
+Visit7  1198   NOPROC  319    99.51    1225.5 -                REJECT
+Visit7  1199   NOPROC  1675   24.91    5.0    relaxed cut      keep
+Visit7  1202   NOPROC  1839   21.13    4.0    relaxed cut      keep
+Visit7  1203   NOPROC  2248   0.00     0.0    high fidelity    keep
+
+Totals: 16 kept (11 high fidelity, 5 admitted by the relaxed cut), 3 rejected.
+
+COVERAGE
+------------------------------------------------------------------------------
+11 of the 12 exposures retain at least one frame.
+  Visit1  1054, 1055, 1056, 1057   all present
+  Visit4  1137, 1138, 1139, 1140   all present
+  Visit7  1199, 1202, 1203 present; 1198 LOST
+
+Frame 1198 (NOPROC@319) is the only unrecoverable exposure: 99.5% of its
+science region never arrived, with gaps up to 1225 px from any real pixel.
+No cut short of accepting fabricated data would retain it.
+
+DELETED FRAMES
+------------------------------------------------------------------------------
+The 3 rejected frames below were deleted on 2026-11-17 21:32 UTC.
+They remain in the archive and can be restored by filename from
+  /Volumes/cute/fits_images/undefined_targetID
+
+  cute_TRIM2D_scan_targetID345_2026_01_25_16_46_frmid_1054_V2_nimgpkts_296_L1id23211_botrows_3_midrows_2.fits
+  cute_NOPROC_scan_targetID345_2026_02_19_23_30_frmid_1138_V2_nimgpkts_1013_L1id23719.fits
+  cute_NOPROC_scan_targetID345_2026_03_12_00_58_frmid_1198_V2_nimgpkts_319_L1id23648.fits
+
+Note: frmid 1198 was the only copy of that exposure, so Visit7 exposure 1198
+now has no local data at all. It was 99.5% missing in the science region and
+could not be interpolated; the archive copy is the only route back.
