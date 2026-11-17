@@ -19,3 +19,8 @@ make hotpix grid for individual sci region and dk regions v wv
 Declare width of regions for each wv (size on right y axis)
 
 correct for earth-mars phase in power plot (for comparison's sake)
+
+==============================================
+
+Observations on these particular dates
+Dust and ice map for those days
