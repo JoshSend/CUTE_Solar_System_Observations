@@ -44,9 +44,9 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'solar_visit': integrated solar flux v visit
 #
 #   'frame_flux' :
-#   'power_grid' :
-# 'leave_one_out':
-#   'hotpix_grid':
+#   'power_grid' : power grid WIP
+# 'leave_one_out': 'leave on out' analysis WIP
+#   'hotpix_grid': hot pixel grid
 
 MODE = 'leave_one_out'
 
