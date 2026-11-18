@@ -1,0 +1,58 @@
+Uranus (targetID330) frames copied from /Volumes/cute/fits_images/undefined_targetID
+Generated: 2026-11-17 20:39 UTC
+Visit numbering per CUTE_flight_exposure_list_Uranus.xlsx (Visit3=frmid 2140-2147, Visit5=frmid 3149-3163)
+
+VISIT    FRMID      FILENAME
+Visit3   2140       cute_TRIM2D_scan_targetID330_2024_09_27_08_12_frmid_2140_V2_nimgpkts_394_L1id18961_botrows_8_midrows_42.fits
+Visit3   2140       cute_TRIM2D_scan_targetID330_2024_09_27_08_12_frmid_2140_V2_nimgpkts_423_L1id18987_botrows_12_midrows_52.fits
+Visit3   2140       cute_TRIM2D_scan_targetID330_2024_09_27_08_12_frmid_2140_V2_nimgpkts_445_L1id19053_botrows_23_midrows_56.fits
+Visit3   2140       cute_TRIM2D_scan_targetID330_2024_09_27_08_12_frmid_2140_V2_nimgpkts_446_L1id19107_botrows_24_midrows_56.fits
+Visit3   2141       cute_TRIM2D_scan_targetID330_2024_09_27_08_17_frmid_2141_V2_nimgpkts_325_L1id18960_botrows_4_midrows_11.fits
+Visit3   2141       cute_TRIM2D_scan_targetID330_2024_09_27_08_17_frmid_2141_V2_nimgpkts_415_L1id18986_botrows_15_midrows_49.fits
+Visit3   2141       cute_TRIM2D_scan_targetID330_2024_09_27_08_17_frmid_2141_V2_nimgpkts_436_L1id18997_botrows_22_midrows_56.fits
+Visit3   2141       cute_TRIM2D_scan_targetID330_2024_09_27_08_17_frmid_2141_V2_nimgpkts_436_L1id19007_botrows_22_midrows_56.fits
+Visit3   2141       cute_TRIM2D_scan_targetID330_2024_09_27_08_17_frmid_2141_V2_nimgpkts_444_L1id19052_botrows_22_midrows_56.fits
+Visit3   2141       cute_TRIM2D_scan_targetID330_2024_09_27_08_17_frmid_2141_V2_nimgpkts_446_L1id19106_botrows_24_midrows_56.fits
+Visit3   2142       cute_TRIM2D_scan_targetID330_2024_09_27_09_45_frmid_2142_V2_nimgpkts_189_L1id18959_botrows_0_midrows_0.fits
+Visit3   2142       cute_TRIM2D_scan_targetID330_2024_09_27_09_45_frmid_2142_V2_nimgpkts_297_L1id18985_botrows_1_midrows_5.fits
+Visit3   2142       cute_TRIM2D_scan_targetID330_2024_09_27_09_45_frmid_2142_V2_nimgpkts_435_L1id18996_botrows_22_midrows_49.fits
+Visit3   2142       cute_TRIM2D_scan_targetID330_2024_09_27_09_45_frmid_2142_V2_nimgpkts_435_L1id19013_botrows_22_midrows_49.fits
+Visit3   2142       cute_TRIM2D_scan_targetID330_2024_09_27_09_45_frmid_2142_V2_nimgpkts_435_L1id19037_botrows_22_midrows_49.fits
+Visit3   2142       cute_TRIM2D_scan_targetID330_2024_09_27_09_45_frmid_2142_V2_nimgpkts_446_L1id19051_botrows_24_midrows_56.fits
+Visit3   2142       cute_TRIM2D_scan_targetID330_2024_09_27_09_45_frmid_2142_V2_nimgpkts_446_L1id19105_botrows_24_midrows_56.fits
+Visit3   2143       cute_TRIM2D_scan_targetID330_2024_09_27_09_50_frmid_2143_V2_nimgpkts_207_L1id18984_botrows_0_midrows_1.fits
+Visit3   2143       cute_TRIM2D_scan_targetID330_2024_09_27_09_50_frmid_2143_V2_nimgpkts_445_L1id18995_botrows_24_midrows_56.fits
+Visit3   2143       cute_TRIM2D_scan_targetID330_2024_09_27_09_50_frmid_2143_V2_nimgpkts_445_L1id19005_botrows_24_midrows_56.fits
+Visit3   2143       cute_TRIM2D_scan_targetID330_2024_09_27_09_50_frmid_2143_V2_nimgpkts_446_L1id19050_botrows_24_midrows_56.fits
+Visit3   2143       cute_TRIM2D_scan_targetID330_2024_09_27_09_50_frmid_2143_V2_nimgpkts_446_L1id19104_botrows_24_midrows_56.fits
+Visit5   3149       cute_TRIM2D_scan_targetID330_2024_10_21_05_48_frmid_3149_V2_nimgpkts_177_L1id19012_botrows_3_midrows_1.fits
+Visit5   3149       cute_TRIM2D_scan_targetID330_2024_10_21_05_48_frmid_3149_V2_nimgpkts_178_L1id19806_botrows_3_midrows_1.fits
+Visit5   3149       cute_TRIM2D_scan_targetID330_2024_10_21_05_48_frmid_3149_V2_nimgpkts_180_L1id20475_botrows_3_midrows_1.fits
+Visit5   3149       cute_TRIM2D_scan_targetID330_2024_10_21_05_48_frmid_3149_V2_nimgpkts_445_L1id20563_botrows_24_midrows_55.fits
+Visit5   3150       cute_TRIM2D_scan_targetID330_2024_10_21_05_54_frmid_3150_V2_nimgpkts_424_L1id19004_botrows_21_midrows_43.fits
+Visit5   3150       cute_TRIM2D_scan_targetID330_2024_10_21_05_54_frmid_3150_V2_nimgpkts_440_L1id19011_botrows_22_midrows_50.fits
+Visit5   3150       cute_TRIM2D_scan_targetID330_2024_10_21_05_54_frmid_3150_V2_nimgpkts_446_L1id20562_botrows_24_midrows_56.fits
+Visit5   3151       cute_TRIM2D_scan_targetID330_2024_10_21_06_00_frmid_3151_V2_nimgpkts_430_L1id19003_botrows_20_midrows_47.fits
+Visit5   3151       cute_TRIM2D_scan_targetID330_2024_10_21_06_00_frmid_3151_V2_nimgpkts_446_L1id19010_botrows_24_midrows_56.fits
+Visit5   3151       cute_TRIM2D_scan_targetID330_2024_10_21_06_00_frmid_3151_V2_nimgpkts_446_L1id19307_botrows_24_midrows_56.fits
+Visit5   3152       cute_TRIM2D_scan_targetID330_2024_10_21_06_06_frmid_3152_V2_nimgpkts_441_L1id19002_botrows_21_midrows_56.fits
+Visit5   3152       cute_TRIM2D_scan_targetID330_2024_10_21_06_06_frmid_3152_V2_nimgpkts_445_L1id19009_botrows_24_midrows_56.fits
+Visit5   3152       cute_TRIM2D_scan_targetID330_2024_10_21_06_06_frmid_3152_V2_nimgpkts_446_L1id19306_botrows_24_midrows_56.fits
+Visit5   3153       cute_TRIM2D_scan_targetID330_2024_10_21_07_23_frmid_3153_V2_nimgpkts_398_L1id19001_botrows_9_midrows_39.fits
+Visit5   3153       cute_TRIM2D_scan_targetID330_2024_10_21_07_23_frmid_3153_V2_nimgpkts_446_L1id19008_botrows_24_midrows_56.fits
+Visit5   3153       cute_TRIM2D_scan_targetID330_2024_10_21_07_23_frmid_3153_V2_nimgpkts_446_L1id19305_botrows_24_midrows_56.fits
+Visit5   3154       cute_TRIM2D_scan_targetID330_2024_10_21_07_29_frmid_3154_V2_nimgpkts_280_L1id19000_botrows_10_midrows_4.fits
+Visit5   3154       cute_TRIM2D_scan_targetID330_2024_10_21_07_29_frmid_3154_V2_nimgpkts_442_L1id20566_botrows_24_midrows_53.fits
+Visit5   3154       cute_TRIM2D_scan_targetID330_2024_10_21_07_29_frmid_3154_V2_nimgpkts_442_L1id20680_botrows_24_midrows_53.fits
+Visit5   3154       cute_TRIM2D_scan_targetID330_2024_10_21_07_29_frmid_3154_V2_nimgpkts_446_L1id20738_botrows_24_midrows_56.fits
+Visit5   3154       cute_TRIM2D_scan_targetID330_2024_10_21_07_29_frmid_3154_V2_nimgpkts_446_L1id20802_botrows_24_midrows_56.fits
+Visit5   3155       cute_TRIM2D_scan_targetID330_2024_10_21_07_35_frmid_3155_V2_nimgpkts_298_L1id18999_botrows_1_midrows_8.fits
+Visit5   3155       cute_TRIM2D_scan_targetID330_2024_10_21_07_35_frmid_3155_V2_nimgpkts_409_L1id19304_botrows_13_midrows_36.fits
+Visit5   3155       cute_TRIM2D_scan_targetID330_2024_10_21_07_35_frmid_3155_V2_nimgpkts_446_L1id20565_botrows_24_midrows_56.fits
+Visit5   3155       cute_TRIM2D_scan_targetID330_2024_10_21_07_35_frmid_3155_V2_nimgpkts_446_L1id20679_botrows_24_midrows_56.fits
+Visit5   3156       cute_TRIM2D_scan_targetID330_2024_10_21_07_41_frmid_3156_V2_nimgpkts_251_L1id18998_botrows_1_midrows_6.fits
+Visit5   3156       cute_TRIM2D_scan_targetID330_2024_10_21_07_41_frmid_3156_V2_nimgpkts_384_L1id19303_botrows_10_midrows_27.fits
+Visit5   3156       cute_TRIM2D_scan_targetID330_2024_10_21_07_41_frmid_3156_V2_nimgpkts_446_L1id20564_botrows_24_midrows_56.fits
+Visit5   3156       cute_TRIM2D_scan_targetID330_2024_10_21_07_41_frmid_3156_V2_nimgpkts_446_L1id20678_botrows_24_midrows_56.fits
+
+Totals: Visit3=22  Visit5=29  unassigned=0  total=51

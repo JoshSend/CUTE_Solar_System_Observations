@@ -1,0 +1,27 @@
+Jupiter system (targetID345) frames copied from /Volumes/cute/fits_images/undefined_targetID
+Generated: 2026-11-17 21:09 UTC
+Visits per CUTE_flight_exposure_list_GammaLep_Jupiter_ZetaPup.xlsx:
+  Visit1 = frmid 1054-1057 (30 s)   Visit4 = frmid 1137-1140 (350 s)   Visit7 = frmid 1194-1203 (350 s)
+
+VISIT    FRMID   TYPE      PKTS     FILENAME
+Visit4   1138    NOPROC    1013     cute_NOPROC_scan_targetID345_2026_02_19_23_30_frmid_1138_V2_nimgpkts_1013_L1id23719.fits
+Visit4   1139    NOPROC    1854     cute_NOPROC_scan_targetID345_2026_02_20_02_29_frmid_1139_V2_nimgpkts_1854_L1id23718.fits
+Visit4   1140    NOPROC    1855     cute_NOPROC_scan_targetID345_2026_02_20_02_38_frmid_1140_V2_nimgpkts_1855_L1id23776.fits
+Visit7   1198    NOPROC    319      cute_NOPROC_scan_targetID345_2026_03_12_00_58_frmid_1198_V2_nimgpkts_319_L1id23648.fits
+Visit7   1199    NOPROC    1675     cute_NOPROC_scan_targetID345_2026_03_12_01_07_frmid_1199_V2_nimgpkts_1675_L1id23647.fits
+Visit7   1202    NOPROC    1839     cute_NOPROC_scan_targetID345_2026_03_12_05_31_frmid_1202_V2_nimgpkts_1839_L1id23650.fits
+Visit7   1203    NOPROC    2248     cute_NOPROC_scan_targetID345_2026_03_12_05_40_frmid_1203_V2_nimgpkts_2248_L1id23649.fits
+Visit1   1054    TRIM2D    296      cute_TRIM2D_scan_targetID345_2026_01_25_16_46_frmid_1054_V2_nimgpkts_296_L1id23211_botrows_3_midrows_2.fits
+Visit1   1054    TRIM2D    351      cute_TRIM2D_scan_targetID345_2026_01_25_16_46_frmid_1054_V2_nimgpkts_351_L1id23275_botrows_15_midrows_8.fits
+Visit1   1055    TRIM2D    357      cute_TRIM2D_scan_targetID345_2026_01_25_16_48_frmid_1055_V2_nimgpkts_357_L1id23210_botrows_8_midrows_21.fits
+Visit1   1055    TRIM2D    431      cute_TRIM2D_scan_targetID345_2026_01_25_16_48_frmid_1055_V2_nimgpkts_431_L1id23274_botrows_21_midrows_50.fits
+Visit1   1056    TRIM2D    407      cute_TRIM2D_scan_targetID345_2026_01_25_18_19_frmid_1056_V2_nimgpkts_407_L1id23209_botrows_13_midrows_41.fits
+Visit1   1056    TRIM2D    446      cute_TRIM2D_scan_targetID345_2026_01_25_18_19_frmid_1056_V2_nimgpkts_446_L1id23273_botrows_24_midrows_56.fits
+Visit1   1057    TRIM2D    368      cute_TRIM2D_scan_targetID345_2026_01_25_18_20_frmid_1057_V2_nimgpkts_368_L1id23208_botrows_10_midrows_27.fits
+Visit1   1057    TRIM2D    446      cute_TRIM2D_scan_targetID345_2026_01_25_18_20_frmid_1057_V2_nimgpkts_446_L1id23272_botrows_24_midrows_56.fits
+Visit4   1137    TRIM2D    446      cute_TRIM2D_scan_targetID345_2026_02_19_23_21_frmid_1137_V2_nimgpkts_446_L1id23415_botrows_24_midrows_56.fits
+Visit4   1138    TRIM2D    446      cute_TRIM2D_scan_targetID345_2026_02_19_23_30_frmid_1138_V2_nimgpkts_446_L1id23414_botrows_24_midrows_56.fits
+Visit4   1139    TRIM2D    445      cute_TRIM2D_scan_targetID345_2026_02_20_02_29_frmid_1139_V2_nimgpkts_445_L1id23413_botrows_24_midrows_56.fits
+Visit4   1140    TRIM2D    428      cute_TRIM2D_scan_targetID345_2026_02_20_02_38_frmid_1140_V2_nimgpkts_428_L1id23412_botrows_15_midrows_47.fits
+
+Total copied: 19

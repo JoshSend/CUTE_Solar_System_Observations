@@ -1,0 +1,142 @@
+PROCESSING NOTES - Uranus (CUTE targetID 330)
+==============================================================================
+
+WHAT THIS REPOSITORY HOLDS
+------------------------------------------------------------------------------
+Only the PROCESSED frames are committed here, under Visit<N>/processed/. The
+raw frames they derive from are not in this repository; they live in the LASP
+archive at /Volumes/cute/fits_images/undefined_targetID and every processed
+file names its original in the FITS HISTORY. The visit layout described below
+therefore refers to the full local working set, not to this repository.
+
+Source   : /Volumes/cute/fits_images/undefined_targetID
+Target   : 330 = Uranus (CUTE_master_target_list.xlsx); confirmed in every FITS header
+Visits   : numbered per CUTE_flight_exposure_list_Uranus.xlsx
+           Visit3 = frmid 2140-2147 (2024-09-27, 240 s)
+           Visit5 = frmid 3149-3163 (2024-10-21, 300 s)
+
+LAYOUT
+------------------------------------------------------------------------------
+  Visit<N>/              raw frames that passed quality screening
+  Visit<N>/processed/    same frames with missing pixels interpolated (*_filled.fits)
+  Visit<N>/rejected/     frames discarded as un-interpolatable (see criterion)
+
+MISSING PIXELS
+------------------------------------------------------------------------------
+Lost downlink packets leave pixels at exactly 0. Each packet carries ~493
+contiguous pixels in raster order, so gaps appear as horizontal row segments.
+Column 0 is a structural dead column present in every frame (100 px) and is
+also filled. nimgpkts/446 gives the fraction of packets received.
+
+REJECTION CRITERION
+------------------------------------------------------------------------------
+A frame is discarded if either:
+  (a) max_dist > 3 px  - some missing pixel lies further than 3 px from any
+      real pixel, so local interpolation has nothing nearby to work from; or
+  (b) missing > 20% of the frame. The distribution has a natural break here:
+      the kept frames top out at 13.96% and the next-worst is 27.16%.
+
+Validated against ground truth: real loss masks were applied to the complete
+(446-packet) frames, interpolated, and compared with the known values. Error
+in the extracted 1-D spectrum (cross-dispersion median over the trace):
+
+   frames kept     : p95 error <= 2.0%, worst bin <= 5.6%
+   frames rejected : up to 4.1% p95, worst bin 38%, and for the ~60%-loss
+                     frames ~38 wavelength bins exceed 5% error
+
+INTERPOLATION METHOD
+------------------------------------------------------------------------------
+Two stages, using only surrounding pixel data:
+  1. normalised convolution (Shepard) propagating inward from gap edges;
+  2. Jacobi relaxation of the Laplace equation with real pixels held fixed,
+     giving a harmonic interpolant across each gap.
+
+Radiation hits are dense in these frames (~11% of pixels exceed median+6 sigma;
+frame median ~4430 ADU, p99 ~45000). Such pixels are EXCLUDED as interpolation
+sources - using them pulls filled values wildly off - but are left untouched in
+the output. Interpolated regions therefore carry the local continuum and contain
+no synthetic cosmic rays, by design.
+
+Only pixels that were missing are replaced; every other pixel is bit-identical
+to the raw frame (verified for all 41 frames). Output stays uint16, clipped to
+1..65534 so 0 (missing) and 65535 (hot) remain unambiguous. Extension FILLMASK
+flags interpolated pixels (1 = interpolated). Headers carry NFILLED, FILLFRAC,
+FILLMETH, FILLMAXD, FILLSRC and HISTORY.
+
+NOT CORRECTED: hot/saturated pixels (65535) and radiation hits are left in place;
+they need the usual cosmic-ray rejection downstream.
+
+FRAME INVENTORY
+------------------------------------------------------------------------------
+visit   frmid  pkts  miss%   maxdist  filled_px  decision 
+Visit3  2140   446   0.00    0.0      0          keep     
+Visit3  2140   445   0.22    1.0      494        keep     
+Visit3  2140   423   5.16    1.0      11360      keep     
+Visit3  2140   394   11.67   2.0      25680      keep     
+Visit3  2141   446   0.00    0.0      0          keep     
+Visit3  2141   444   0.45    1.0      988        keep     
+Visit3  2141   436   2.25    1.0      4939       keep     
+Visit3  2141   436   2.25    1.0      4939       keep     
+Visit3  2141   415   6.96    1.0      15306      keep     
+Visit3  2141   325   27.16   3.0      -          REJECT   
+Visit3  2142   446   0.00    0.0      0          keep     
+Visit3  2142   446   0.00    0.0      0          keep     
+Visit3  2142   435   2.47    1.0      5434       keep     
+Visit3  2142   435   2.47    1.0      5434       keep     
+Visit3  2142   435   2.47    1.0      5434       keep     
+Visit3  2142   297   33.44   4.0      -          REJECT   
+Visit3  2142   189   57.68   8.0      -          REJECT   
+Visit3  2143   446   0.00    0.0      0          keep     
+Visit3  2143   446   0.00    0.0      0          keep     
+Visit3  2143   445   0.22    1.0      494        keep     
+Visit3  2143   445   0.22    1.0      494        keep     
+Visit3  2143   207   53.50   15.0     -          REJECT   
+Visit5  3149   445   0.22    1.0      494        keep     
+Visit5  3149   180   59.56   9.0      -          REJECT   
+Visit5  3149   178   60.01   12.0     -          REJECT   
+Visit5  3149   177   60.23   12.0     -          REJECT   
+Visit5  3150   446   0.00    0.0      0          keep     
+Visit5  3150   440   1.35    1.0      2960       keep     
+Visit5  3150   424   4.94    1.0      10861      keep     
+Visit5  3151   446   0.00    0.0      0          keep     
+Visit5  3151   446   0.00    0.0      0          keep     
+Visit5  3151   430   3.59    1.0      7900       keep     
+Visit5  3152   446   0.00    0.0      0          keep     
+Visit5  3152   445   0.08    1.0      170        keep     
+Visit5  3152   441   0.98    1.0      2146       keep     
+Visit5  3153   446   0.00    0.0      0          keep     
+Visit5  3153   446   0.00    0.0      0          keep     
+Visit5  3153   398   10.77   2.0      23702      keep     
+Visit5  3154   446   0.00    0.0      0          keep     
+Visit5  3154   446   0.00    0.0      0          keep     
+Visit5  3154   442   0.90    1.0      1975       keep     
+Visit5  3154   442   0.90    1.0      1975       keep     
+Visit5  3154   280   37.26   6.0      -          REJECT   
+Visit5  3155   446   0.00    0.0      0          keep     
+Visit5  3155   446   0.00    0.0      0          keep     
+Visit5  3155   409   8.16    2.0      17944      keep     
+Visit5  3155   298   33.07   4.0      -          REJECT   
+Visit5  3156   446   0.00    0.0      0          keep     
+Visit5  3156   446   0.00    0.0      0          keep     
+Visit5  3156   384   13.92   3.0      30618      keep     
+Visit5  3156   251   43.77   7.0      -          REJECT   
+
+Totals: 41 kept (18 Visit3, 23 Visit5), 10 rejected. All 12 exposures retain
+at least one frame; every exposure still has a >=445-packet copy.
+
+DELETED FRAMES
+------------------------------------------------------------------------------
+The 10 rejected frames below were deleted on 2026-11-17 21:01 UTC.
+They remain in the archive and can be restored by filename from
+  /Volumes/cute/fits_images/undefined_targetID
+
+  cute_TRIM2D_scan_targetID330_2024_09_27_08_17_frmid_2141_V2_nimgpkts_325_L1id18960_botrows_4_midrows_11.fits
+  cute_TRIM2D_scan_targetID330_2024_09_27_09_45_frmid_2142_V2_nimgpkts_189_L1id18959_botrows_0_midrows_0.fits
+  cute_TRIM2D_scan_targetID330_2024_09_27_09_45_frmid_2142_V2_nimgpkts_297_L1id18985_botrows_1_midrows_5.fits
+  cute_TRIM2D_scan_targetID330_2024_09_27_09_50_frmid_2143_V2_nimgpkts_207_L1id18984_botrows_0_midrows_1.fits
+  cute_TRIM2D_scan_targetID330_2024_10_21_05_48_frmid_3149_V2_nimgpkts_177_L1id19012_botrows_3_midrows_1.fits
+  cute_TRIM2D_scan_targetID330_2024_10_21_05_48_frmid_3149_V2_nimgpkts_178_L1id19806_botrows_3_midrows_1.fits
+  cute_TRIM2D_scan_targetID330_2024_10_21_05_48_frmid_3149_V2_nimgpkts_180_L1id20475_botrows_3_midrows_1.fits
+  cute_TRIM2D_scan_targetID330_2024_10_21_07_29_frmid_3154_V2_nimgpkts_280_L1id19000_botrows_10_midrows_4.fits
+  cute_TRIM2D_scan_targetID330_2024_10_21_07_35_frmid_3155_V2_nimgpkts_298_L1id18999_botrows_1_midrows_8.fits
+  cute_TRIM2D_scan_targetID330_2024_10_21_07_41_frmid_3156_V2_nimgpkts_251_L1id18998_botrows_1_midrows_6.fits
