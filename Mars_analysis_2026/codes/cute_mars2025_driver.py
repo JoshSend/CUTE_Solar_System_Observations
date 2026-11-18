@@ -45,10 +45,10 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #
 #   'frame_flux' :
 #   'power_grid' : power grid WIP
-# 'leave_one_out': 'leave on out' analysis WIP
+# 'leave_one_out': 'leave one out' analysis WIP
 #   'hotpix_grid': hot pixel grid
 
-MODE = 'leave_one_out'
+MODE = 'power_grid'
 
 # save figures/GIFs to the output folder
 SAVE = False
@@ -85,6 +85,15 @@ STATIC_ALL_OVERWRITE = True # overwrite pre-existing files
 STATIC_ALL_YLIM = (0.0, 3.0) # fixed flux range
 STATIC_ALL_VMIN = None # Flux range min
 STATIC_ALL_VMAX = None # Flux range max
+
+# --- 'hotpix_grid' options ---
+# None or '' : total removed
+# 'science'  : science region only
+# 'dark'     : dark region only
+HOTPIX_VERS = "dark"
+
+# --- 'power_grid' options ---
+POWER_PHASE_CORRECT = True
 
  
 # --- 'overlay' and 'overlay_all' options ---
@@ -133,6 +142,13 @@ BRIGHTEST = {
 MARS_EARTH_AU = {
     'Visit1': 0.69, 'Visit2': 0.64, 'Visit3': 0.65, 'Visit4': 0.67,
     'Visit5': 0.69, 'Visit7': 0.77, 'Visit8': 0.87, 'Visit9': 1.12,
+}
+
+# Mars-Sun (heliocentric) distance in AU per visit, for the (a/d_SM)^2 incident-
+# flux correction. Horizons column 'r'. None = unknown (that factor is skipped).
+MARS_SUN_AU = {
+    'Visit1': None, 'Visit2': None, 'Visit3': None, 'Visit4': None,
+    'Visit5': None, 'Visit7': None, 'Visit8': None, 'Visit9': None,
 }
 
 PHASE_ANGLE = {
@@ -390,10 +406,14 @@ def main():
     elif MODE in ('frame_flux', 'power_grid', 'leave_one_out'):
         items = [(v, _brightness_csv(v)) for v in GRID_VISITS]
         out = _get_output_dir(os.path.join(output_dir, MODE)) if SAVE else None
-        {'frame_flux': CuteObservation.plot_frame_flux,
-         'power_grid': CuteObservation.plot_power_grid,
-         'leave_one_out': CuteObservation.plot_leave_one_out}[MODE](
-            items, save=SAVE, output_dir=out, show=not SAVE)
+        if MODE == 'power_grid':
+            CuteObservation.plot_power_grid(
+                items, phase=PHASE_ANGLE, mars_earth=MARS_EARTH_AU, mars_sun=MARS_SUN_AU,
+                save=SAVE, output_dir=out, show=not SAVE)
+        else:
+            {'frame_flux': CuteObservation.plot_frame_flux,
+             'leave_one_out': CuteObservation.plot_leave_one_out}[MODE](
+                items, save=SAVE, output_dir=out, show=not SAVE)
 
     elif MODE == 'hotpix_grid':
         items = []
@@ -404,7 +424,8 @@ def main():
             else:
                 print(f"  {v}: no CSV for frmid {fid}, skipping")
         out = _get_output_dir(os.path.join(output_dir, 'hotpix_grid')) if SAVE else None
-        CuteObservation.plot_hotpix_grid(items, save=SAVE, output_dir=out, show=not SAVE)
+        CuteObservation.plot_hotpix_grid(items, vers=HOTPIX_VERS or None,
+                                         save=SAVE, output_dir=out, show=not SAVE)
 
     else:
         raise ValueError(

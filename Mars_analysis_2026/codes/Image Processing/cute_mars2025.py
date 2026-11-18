@@ -626,6 +626,8 @@ class CuteObservation:
         self.n_hot_sci = self.n_hot_dk = 0
         self.n_hot_sci_col = np.zeros(2048, dtype=int)
         self.n_hot_dk_col  = np.zeros(2048, dtype=int)
+        self.wdth_sci_col  = np.zeros(2048, dtype=int)
+        self.wdth_dk_col   = np.zeros(2048, dtype=int)
 
         for i in range(2048):
             col = self.xval[i]
@@ -635,6 +637,7 @@ class CuteObservation:
             dk_pix = self.img[yy1:yy2, col].astype(float)
             dk_hot = hot[yy1:yy2, col]
             self.n_hot_dk_col[i] = int(dk_hot.sum())
+            self.wdth_dk_col[i]  = yy2 - yy1  
             self.n_hot_dk += self.n_hot_dk_col[i]
             dk_good = dk_pix[~dk_hot]
             if dk_good.size == 0:
@@ -651,6 +654,7 @@ class CuteObservation:
             sc_pix = self.img[yy3:yy4, col].astype(float)
             sc_hot = hot[yy3:yy4, col]
             self.n_hot_sci_col[i] = int(sc_hot.sum())
+            self.wdth_sci_col[i]  = n_sc
             self.n_hot_sci += self.n_hot_sci_col[i]
             sc_good = sc_pix[~sc_hot]
             if sc_good.size == 0:
@@ -899,19 +903,22 @@ class CuteObservation:
         return saved
 
     def save_spectrum_csv(self, output_dir):
-        """One self-contained file per frame: wave,flux,err,n_hot per pixel, with the
-        frame DATE_OBS as a trailing comment. Read by reflectance_curve and the
-        per-frame/orbit analysis alike."""
+        """One self-contained file per frame:
+        wave,flux,err,n_hotsci,n_hotdk,wdth_sci,wdth_dk per column, with the frame
+        DATE_OBS as a trailing comment. Widths are the row-heights (cross-dispersion)
+        of the science box and dark strip at each column."""
         os.makedirs(output_dir, exist_ok=True)
         stem = os.path.splitext(os.path.basename(self.fits_fname))[0]
         path = os.path.join(output_dir, f"{stem}{self.fit_tag()}.csv")
         wave = self.reference.wv_soln
-        nhot = (getattr(self, 'n_hot_sci_col', np.zeros(len(wave), int)) +
-                getattr(self, 'n_hot_dk_col', np.zeros(len(wave), int)))
+        n = len(wave)
+        z = lambda a: getattr(self, a, np.zeros(n, int))
+        nhs, nhd = z('n_hot_sci_col'), z('n_hot_dk_col')
+        wsc, wdk = z('wdth_sci_col'), z('wdth_dk_col')
         with open(path, 'w') as f:
-            f.write("wave,flux,err,n_hot\n")
-            for w, fl, e, nh in zip(wave, self.flux, self.flux_err, nhot):
-                f.write(f"{w:.6e},{fl:.6e},{e:.6e},{int(nh)}\n")
+            f.write("wave,flux,err,n_hotsci,n_hotdk,wdth_sci,wdth_dk\n")
+            for w, fl, e, a, b, c, dd in zip(wave, self.flux, self.flux_err, nhs, nhd, wsc, wdk):
+                f.write(f"{w:.6e},{fl:.6e},{e:.6e},{int(a)},{int(b)},{int(c)},{int(dd)}\n")
             f.write(f"# DATE_OBS={getattr(self, 'date_obs', None)}\n")
         return path
 
@@ -1543,25 +1550,78 @@ class CuteObservation:
         return fig, ax
 
     @classmethod
-    def plot_hotpix_grid(cls, items, ncols=4, figsize=None, save=False,
-                         output_dir=None, fname='hotpix_grid.png', dpi=200, show=True):
-        """Grid, one panel per visit's brightest frame: hot pixels removed per column
-        (y) vs wavelength / column (x). Reads the merged per-frame CSV's n_hot field."""
-        n = len(items); nrows = int(np.ceil(n / ncols))
-        fig, axes = plt.subplots(nrows, ncols, figsize=figsize or (4 * ncols, 3 * nrows),
-                                 squeeze=False, sharex=True, sharey=True)
+    def plot_hotpix_grid(cls, items, vers=None, ncols=4, figsize=None, save=False,
+                         output_dir=None, fname=None, dpi=200, show=True):
+        """Grid, one panel per visit's brightest frame. LEFT axis: hot pixels removed
+        per column vs wavelength, SHARED across all panels (top = global max + 2).
+        RIGHT axis (green line): width of the region (rows) per column. vers:
+            None / ''  -> total hot (science + dark); width shows BOTH regions
+            'science'  -> science hot (n_hotsci);   width = wdth_sci
+            'dark'     -> dark hot   (n_hotdk);      width = wdth_dk
+        """
+        v = (vers or '').lower()
+        label_txt = {'': 'science + dark', 'science': 'science region',
+                     'dark': 'dark region'}.get(v, 'science + dark')
+        hot_c = {'science': 'firebrick', 'dark': 'firebrick'}.get(v, 'firebrick')
+        wc = 'blue'
+        if fname is None:
+            fname = f"hotpix_grid_{v or 'total'}.png"
+
+        # ---- pre-pass: load each panel's series so the hot-pixel axis can be shared
+        data = []
+        for label, csv_path in items:
+            d = np.genfromtxt(csv_path, delimiter=',', names=True, comments='#')
+            nm = d.dtype.names
+            wave = np.asarray(d['wave'] if 'wave' in nm else d[nm[0]], float)
+            col = lambda name: np.asarray(d[name], float) if name in nm else np.zeros_like(wave)
+            if v == 'science':
+                y = col('n_hotsci'); wtot = np.nansum(col('wdth_sci'))
+            elif v == 'dark':
+                y = col('n_hotdk'); wtot = np.nansum(col('wdth_dk'))
+            elif 'n_hotsci' in nm or 'n_hotdk' in nm:
+                y = col('n_hotsci') + col('n_hotdk')
+                wtot = np.nansum(col('wdth_sci')) + np.nansum(col('wdth_dk'))
+            else:
+                y = col('n_hot'); wtot = np.nansum(col('wdth_sci')) + np.nansum(col('wdth_dk'))
+            o = np.argsort(wave)
+            data.append((label, wave[o], y[o], col('wdth_sci')[o], col('wdth_dk')[o], wtot))
+        gmax = max((np.nanmax(y) if y.size else 0) for _, _, y, _, _, _ in data)
+        ytop = (gmax + 2) if np.isfinite(gmax) else 2
+
+        n = len(data); nrows = int(np.ceil(n / ncols))
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize or (4.3 * ncols, 3 * nrows),
+                                 squeeze=False, sharex=True)
         axf = axes.ravel()
         for ax in axf[n:]:
             ax.axis('off')
-        for ax, (label, csv_path) in zip(axf, items):
-            wave, flux, nhot, date = cls._read_frame_csv(csv_path)
-            o = np.argsort(wave)
-            ax.plot(wave[o], nhot[o], color='firebrick', lw=0.9)
-            ax.fill_between(wave[o], 0, nhot[o], color='firebrick', alpha=0.25)
-            ax.set_title(f'{label}  (N={int(np.nansum(nhot))})', fontsize=9)
-            ax.set_xlabel('wavelength (\u00c5)'); ax.set_ylabel('hot pixels removed')
-            ax.grid(True, ls='--', lw=0.5, alpha=0.5)
-        fig.suptitle('Hot Pixels removed per Wavelength (Brightest frames)', fontsize=12)
+        for idx, (ax, (label, wv, y, wsci, wdk, wtot)) in enumerate(zip(axf, data)):
+            # LEFT axis: hot pixels removed (shared limit)
+            ax.plot(wv, y, color=hot_c, lw=0.9)
+            ax.fill_between(wv, 0, y, color=hot_c, alpha=1)
+            ax.set_ylim(0, ytop)
+            percentage = (int(np.nansum(y)) / int(wtot)) * 100
+            ax.set_title(f'{label}  (N={int(np.nansum(y))}, {percentage:.2f}%)', fontsize=9)
+            ax.set_xlabel('wavelength (\u00c5)')
+            if idx % ncols == 0:
+                ax.set_ylabel('# hot pixels removed', color=hot_c)
+            ax.tick_params(axis='y', labelcolor=hot_c)
+            ax.grid(True, ls='--', lw=0.5, alpha=0.4)
+
+            # RIGHT axis: region width (rows) per column
+            ax2 = ax.twinx()
+            if v == 'science':
+                ax2.plot(wv, wsci, color=wc, lw=1.3, alpha=0.5)
+            elif v == 'dark':
+                ax2.plot(wv, wdk, color=wc, lw=1.3, alpha=0.5)
+            else:
+                ax2.plot(wv, wsci, color=wc, lw=1.3,alpha=0.25)
+                ax2.plot(wv, wdk, color=wc, lw=1.3, alpha=0.25)
+                if idx == 0:
+                    ax2.legend(fontsize=7, loc='upper right')
+            ax2.tick_params(axis='y', labelcolor=wc)
+            if idx % ncols == ncols - 1 or idx == n - 1:
+                ax2.set_ylabel('region width (rows)', color=wc)
+        fig.suptitle(f"Hot Pixels removed per column (brightest frames only, {label_txt} only)")
         fig.tight_layout()
         if save:
             os.makedirs(output_dir, exist_ok=True)
@@ -1746,7 +1806,8 @@ class CuteObservation:
 
     @staticmethod
     def _read_frame_csv(path):
-        """(wave, flux, n_hot, date_obs) from a merged per-frame spectrum CSV."""
+        """(wave, flux, n_hot_total, date_obs) from a merged per-frame spectrum CSV.
+        n_hot_total = n_hotsci + n_hotdk (falls back to a legacy n_hot column)."""
         date = None
         with open(path) as fh:
             for line in fh:
@@ -1756,7 +1817,12 @@ class CuteObservation:
         nm = d.dtype.names
         wave = np.asarray(d['wave'] if 'wave' in nm else d[nm[0]], float)
         flux = np.asarray(d['flux'] if 'flux' in nm else d[nm[1]], float)
-        nhot = np.asarray(d['n_hot'], float) if 'n_hot' in nm else np.zeros_like(wave)
+        nhot = np.zeros_like(wave)
+        if 'n_hotsci' in nm or 'n_hotdk' in nm:
+            if 'n_hotsci' in nm: nhot = nhot + np.asarray(d['n_hotsci'], float)
+            if 'n_hotdk'  in nm: nhot = nhot + np.asarray(d['n_hotdk'], float)
+        elif 'n_hot' in nm:
+            nhot = np.asarray(d['n_hot'], float)
         return wave, flux, nhot, date
 
     @classmethod
@@ -1839,12 +1905,17 @@ class CuteObservation:
         kw.setdefault('fname', 'leave_one_out.png'); return cls._frame_grid(items, 'loo', **kw)
 
     @classmethod
-    def plot_power_grid(cls, items, wmin=2900.0, wmax=3300.0, orbit_period_s=5400.0,
+    def plot_power_grid(cls, items, phase=None, mars_earth=None, mars_sun=None,
+                        wmin=2500.0, wmax=3300.0, orbit_period_s=5400.0,
                         cmap='tab10', figsize=(11, 5), save=False, output_dir=None,
                         fname='power_grid.png', dpi=200, show=True):
-        """Single axes: integrated power for every visit on one plot, one x-slot per
-        visit. A visit that spans several orbits shows one point per orbit, offset
-        within its slot; error bar = std of the frames in that orbit."""
+        """Single axes: integrated power per visit, one x-slot per visit. Supply any
+        of the geometry dicts ({label: value}) to reduce power to a COMMON geometry:
+            phase      : phase angle (deg)    -> divide by Lambert Phi(alpha)   (-> alpha=0)
+            mars_earth : Mars-Earth dist (AU) -> multiply by Delta^2            (-> 1 AU)
+            mars_sun   : Mars-Sun  dist (AU)  -> multiply by d_SM^2             (-> 1 AU)
+        With all three, power is directly comparable across visits."""
+        corr = any(x is not None for x in (phase, mars_earth, mars_sun))
         fig, ax = plt.subplots(figsize=figsize)
         cols = plt.get_cmap(cmap)
         xt, xl = [], []
@@ -1853,6 +1924,14 @@ class CuteObservation:
             xt.append(xi); xl.append(label)
             if flux.size == 0:
                 continue
+            f = 1.0
+            if phase is not None and phase.get(label) is not None:
+                f = f / _lambert_phase(phase[label])            # -> alpha = 0
+            if mars_earth is not None and mars_earth.get(label) is not None:
+                f = f * mars_earth[label] ** 2                  # Delta^2  -> 1 AU
+            if mars_sun is not None and mars_sun.get(label) is not None:
+                f = f * mars_sun[label] ** 2                    # d_SM^2   -> 1 AU
+            flux = flux * f
             orb = cls._orbit_index(times, orbit_period_s)
             uo = np.unique(orb)
             if len(uo) > 1:
@@ -1866,10 +1945,13 @@ class CuteObservation:
                             yerr=(fo.std() if fo.size > 1 else 0.0),
                             fmt='o', ms=7, capsize=4,
                             color=cols(xi % 10), ecolor=cols(xi % 10))
-        ax.set_xticks(xt); ax.set_xticklabels(xl)
-        ax.set_yscale('log')
-        ax.set_xlabel('visit'); ax.set_ylabel('integrated power')
-        ax.set_title(f'{wmin:.0f}\u2013{wmax:.0f} \u00c5')
+        ax.set_xticks(xt); ax.set_xticklabels(xl); ax.set_xlabel('visit')
+        ax.set_ylabel('power' if corr
+                      else 'integrated power (per orbit)')
+        # ax.set_title(f'{wmin:.0f}\u2013{wmax:.0f} \u00c5'
+        #              + ('  \u2014 common geometry ($\\alpha$=0, $\\Delta$=1 AU, $d_{SM}$=1 AU)'
+        #                 if corr else ''))
+        ax.set_title(f"Integrated Power per visit (corrected for geometry)\n{wmin:.0f}\u2013{wmax:.0f} \u00c5" if corr else "")
         ax.grid(True, ls='--', lw=0.5, alpha=0.5)
         fig.tight_layout()
         if save:
