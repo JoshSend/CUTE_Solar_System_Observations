@@ -5,26 +5,33 @@ outside of CUTE Mars observations
 
 ==============================================
 
-plot for num of hot pixels per col removed
-
-Test if frame is outlier
-"leave one out analysis"
-Avg orbits: T = ~90min
-
-Power output across visits
-
-==============================================
-
-make hotpix grid for individual sci region and dk regions v wv
-Declare width of regions for each wv (size on right y axis)
-
-correct for earth-mars phase in power plot (for comparison's sake)
-
-==============================================
-
 Observations on these particular dates
 Dust and ice map for those days
 
 ==============================================
 
 Ask about journals for CUTE paper
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+Instead of removing hotpix, replace.
+Match with gaussian distribution of the column (profile of data)
+plot pix values along col, fit gaussian func, replace with func value
+
+Visit1 has 60s exposure time, normalize to 100s exposure
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+Fitting a guassian to raw spectra
+using that profile to def extraction regions and "outlier" values
+
+Averaging flux? divide by # of pixels include, per pix avg
+
+=================================================
+=================================================
+Plot the raw spectra data and fit a gaussian curve to it
+Use that profile to define the extraction regions and "outlier" values
+
+Make sure the flux is being averaged,
+and the difference in visit 1's (60s) exposure time is accounted for since
+the rest of the visits have a 100s exposure time. (ALREADY DONE)

@@ -459,6 +459,15 @@ class CuteObservation:
                                #       difference (rescales flux/albedo by ~1/n_sc).
     _hot_printed = set()
 
+    # ---- Gaussian trace extraction / inpainting ----
+    GAUSS_EXTRACT = True     # fit a smooth Gaussian trace; aperture & inpaint from it
+    KSIG          = 3.0      # science aperture half-width, in sigma (±3σ ≈ 99.7%)
+    INPAINT_SIGMA = 5.0      # replace a pixel by the model if |resid| > this × noise
+    TRACE_HALFWIN = 16       # rows each side of the nominal center used while fitting
+    TRACE_DEG_CEN = 2        # polynomial degree of center(column)
+    TRACE_DEG_SIG = 2        # polynomial degree of sigma(column)
+    TRUNC_CORR    = 0.900    # 2nd-moment de-bias factor for a ±2.5σ window
+
     def __init__(
         self, fits_fname, reference: CuteReference, visit=None, base_dir=None,
         track=True, widen=True,
@@ -477,23 +486,28 @@ class CuteObservation:
         self.trace_fwhm = 0.0
         self.sci_grow = 0.0
         self._build_regions()                       # nominal box
-        if track:
-            self.row_offset, self.trace_fwhm = self._measure_trace_shape()
-
-        # Pick the science half-height:
-        #   SCI_HALF set -> FIXED width (2*SCI_HALF rows), ignores FWHM
-        #   elif widen   -> adaptive, APERTURE * FWHM
-        #   else         -> nominal box height
-        i_mid = len(self.xval) // 2
-        h0 = 0.5 * (self.yval2_sc[i_mid] - self.yval1_sc[i_mid])   # nominal half-height
-        if self.SCI_HALF is not None:
-            target_half = self.SCI_HALF
-        elif widen and self.trace_fwhm > 0:
-            target_half = self.APERTURE * (self.trace_fwhm / 2.0)
+        self.row_offset = 0.0
+        
+        self.trace_fwhm = 0.0
+        self.sci_grow = 0.0
+        self._build_regions()                       # nominal geometry (seeds the fit)
+        if self.GAUSS_EXTRACT:
+            self._fit_trace_model()                 # smooth Gaussian trace
+            self._apply_gaussian_regions()          # aperture = center ± KSIG·sigma
         else:
-            target_half = h0
-        self.sci_grow = max(target_half - h0, 1 - h0)      # never below ~1px
-        self._build_regions(row_shift=self.row_offset, sci_grow=self.sci_grow)
+            if track:
+                self.row_offset, self.trace_fwhm = self._measure_trace_shape()
+            i_mid = len(self.xval) // 2
+            h0 = 0.5 * (self.yval2_sc[i_mid] - self.yval1_sc[i_mid])
+            if self.SCI_HALF is not None:
+                target_half = self.SCI_HALF
+            elif widen and self.trace_fwhm > 0:
+                target_half = self.APERTURE * (self.trace_fwhm / 2.0)
+            else:
+                target_half = h0
+            self.sci_grow = max(target_half - h0, 1 - h0)
+            self._build_regions(row_shift=self.row_offset, sci_grow=self.sci_grow)
+        self.spectra = self.extract_spectrum()
 
         self.spectra = self.extract_spectrum()
         self.flux = self._compute_flux()
@@ -614,70 +628,61 @@ class CuteObservation:
         return resid > self.HOT_SIGMA * 1.4826 * mad
     
     def extract_spectrum(self):
-        dk_arr = np.zeros(2048, dtype=float)
-        sc_arr = np.zeros(2048, dtype=float)
-        err_arr = np.zeros(2048, dtype=float)          # 1-sigma error, in DN
-        nrows = self.img.shape[0]
-        g = self.GAIN
-        rn2 = self.READ_NOISE ** 2
+        img = self.img.astype(float)
+        nrows = img.shape[0]; rows = np.arange(nrows)
+        g = self.GAIN; rn2 = self.READ_NOISE ** 2
         clamp = lambda v: min(max(int(round(v)), 0), nrows)
+        k = float(self.INPAINT_SIGMA)
+        cen = self.trace_center; sig = self.trace_sigma
+        amp = self.trace_amp; bg = self.trace_bg
 
-        hot = self._build_hot_mask() if self.HOT_REJECT else np.zeros(self.img.shape, bool)
+        sc_arr = np.zeros(2048); dk_arr = np.zeros(2048); err_arr = np.zeros(2048)
         self.n_hot_sci = self.n_hot_dk = 0
-        self.n_hot_sci_col = np.zeros(2048, dtype=int)
-        self.n_hot_dk_col  = np.zeros(2048, dtype=int)
-        self.wdth_sci_col  = np.zeros(2048, dtype=int)
-        self.wdth_dk_col   = np.zeros(2048, dtype=int)
+        self.n_hot_sci_col = np.zeros(2048, int); self.n_hot_dk_col = np.zeros(2048, int)
+        self.wdth_sci_col  = np.zeros(2048, int); self.wdth_dk_col  = np.zeros(2048, int)
 
         for i in range(2048):
             col = self.xval[i]
-
-            # ---- dark strip: mean of hot-pixel-free pixels ----
+            # ---- dark strip: inpaint spikes toward the local background ----
             yy1, yy2 = clamp(self.yval1_dk[i]), clamp(self.yval2_dk[i])
-            dk_pix = self.img[yy1:yy2, col].astype(float)
-            dk_hot = hot[yy1:yy2, col]
-            self.n_hot_dk_col[i] = int(dk_hot.sum())
-            self.wdth_dk_col[i]  = yy2 - yy1  
-            self.n_hot_dk += self.n_hot_dk_col[i]
-            dk_good = dk_pix[~dk_hot]
-            if dk_good.size == 0:
-                dk_good = dk_pix                         # all flagged -> keep all
-            n_dk = dk_good.size
-            m_dk = float(dk_good.mean()) if n_dk else 0.0
+            self.wdth_dk_col[i] = yy2 - yy1
+            dk = img[yy1:yy2, col].copy()
+            if dk.size:
+                med = np.median(dk)
+                nmad = 1.4826 * np.median(np.abs(dk - med)) + 1e-9
+                bad = np.abs(dk - med) > k * nmad
+                self.n_hot_dk_col[i] = int(bad.sum()); self.n_hot_dk += int(bad.sum())
+                dk[bad] = med                      # estimate = local background
+                m_dk = float(dk.mean()); n_dk = dk.size
+            else:
+                m_dk = 0.0; n_dk = 1
             dk_arr[i] = m_dk
 
-            # ---- science box: mean of hot-pixel-free pixels ----
+            # ---- science box: inpaint spikes toward the Gaussian model ----
             yy3, yy4 = clamp(self.yval1_sc[i]), clamp(self.yval2_sc[i])
-            n_sc = yy4 - yy3                             # full aperture height (rows)
+            n_sc = yy4 - yy3; self.wdth_sci_col[i] = n_sc
             if n_sc <= 0:
                 continue
-            sc_pix = self.img[yy3:yy4, col].astype(float)
-            sc_hot = hot[yy3:yy4, col]
-            self.n_hot_sci_col[i] = int(sc_hot.sum())
-            self.wdth_sci_col[i]  = n_sc
-            self.n_hot_sci += self.n_hot_sci_col[i]
-            sc_good = sc_pix[~sc_hot]
-            if sc_good.size == 0:
-                sc_good = sc_pix
-            n_sc_good = sc_good.size
-            m_sc = float(sc_good.mean())
+            y = rows[yy3:yy4].astype(float)
+            sc = img[yy3:yy4, col].copy()
+            model = amp[i] * np.exp(-0.5 * ((y - cen[i]) / sig[i]) ** 2) + bg[i]
+            noise = np.sqrt(np.maximum(g * np.maximum(model, 0.0) + rn2, 0.0)) / g
+            bad = np.abs(sc - model) > k * noise
+            self.n_hot_sci_col[i] = int(bad.sum()); self.n_hot_sci += int(bad.sum())
+            sc[bad] = model[bad]                   # estimate = fitted profile value
+            m_sc = float(sc.mean())                # AVERAGED column value (not aperture sum)
 
-            sig = m_sc - m_dk                           # per-pixel dark-subtracted signal
-            sc_arr[i] = (n_sc * sig) if self.APERTURE_SUM else sig
-
-            # error on the mean-difference signal (e- -> DN), scaled to the aperture
-            var_sc = (g * max(m_sc, 0.0) + rn2) / g ** 2 / max(n_sc_good, 1)
+            sc_arr[i] = m_sc - m_dk                # mean dark-subtracted signal
+            var_sc = (g * max(m_sc, 0.0) + rn2) / g ** 2 / max(n_sc, 1)
             var_dk = (g * max(m_dk, 0.0) + rn2) / g ** 2 / max(n_dk, 1)
-            scale = n_sc if self.APERTURE_SUM else 1.0
-            err_arr[i] = scale * np.sqrt(max(var_sc + var_dk, 0.0))
+            err_arr[i] = np.sqrt(max(var_sc + var_dk, 0.0))
 
         self.sc_err_dn = err_arr
-        if self.HOT_REJECT:
-            key = (self.visit, self.frame_id)
-            if key not in type(self)._hot_printed:
-                type(self)._hot_printed.add(key)
-                print(f"  {self.visit} frmid {self.frame_id}: hot pixels removed "
-                      f"(science {self.n_hot_sci}, dark {self.n_hot_dk})")
+        key = (self.visit, self.frame_id)
+        if key not in type(self)._hot_printed:
+            type(self)._hot_printed.add(key)
+            print(f"  {self.visit} frmid {self.frame_id}: hot pixels inpainted "
+                  f"(science {self.n_hot_sci}, dark {self.n_hot_dk})")
         return sc_arr
 
     def _compute_flux(self):
@@ -770,6 +775,87 @@ class CuteObservation:
             return parts[idx + 1]
 
         return "Unknown"
+
+    def _fit_trace_model(self):
+        """Smooth cross-dispersion trace model f(x,y)=A(x)·exp[-(y-yc(x))²/2σ(x)²]+B(x).
+        Stage 1: per-column centroid/width by an iterative ±2.5σ truncated moment.
+        Stage 2: low-order polynomials yc(x), σ(x) across columns, brightness-weighted
+                 and 3σ-clipped so hot columns can't bend the trace.
+        Stage 3: with yc, σ fixed, solve each column's A, B by a robust (clipped)
+                 linear least-squares. Sets self.trace_center/-sigma/-amp/-bg."""
+        img = self.img.astype(float)
+        nrows = img.shape[0]; rows = np.arange(nrows)
+        cols = self.xval; ncol = len(cols)
+        hw = int(self.TRACE_HALFWIN)
+        g = self.GAIN; rn2 = self.READ_NOISE ** 2
+        k = float(self.INPAINT_SIGMA)
+        nom = 0.5 * (self.yval1_sc + self.yval2_sc)          # nominal center (seed)
+
+        cen0 = np.full(ncol, np.nan); sig0 = np.full(ncol, np.nan); amp0 = np.full(ncol, np.nan)
+        for i, c in enumerate(cols):
+            lo = max(int(nom[i] - hw), 0); hi = min(int(nom[i] + hw) + 1, nrows)
+            ys = rows[lo:hi].astype(float); f = img[lo:hi, c]
+            b = np.median(f); mu, sg = float(nom[i]), 3.0
+            for _ in range(4):                               # iterative ±2.5σ moment
+                m = (ys >= mu - 2.5 * sg) & (ys <= mu + 2.5 * sg)
+                s = np.clip(f[m] - b, 0, None); tot = s.sum()
+                if tot <= 0: break
+                mu = (ys[m] * s).sum() / tot
+                sg = np.sqrt(max((s * (ys[m] - mu) ** 2).sum() / tot, 0.25))
+            cen0[i] = mu; sig0[i] = sg / self.TRUNC_CORR     # de-bias truncation
+            amp0[i] = np.clip(f - b, 0, None).sum()
+
+        xx = cols.astype(float)
+        good = np.isfinite(cen0) & np.isfinite(sig0) & (amp0 > 0)
+        w = np.where(good, amp0, 0.0)
+        def rpoly(yv, deg, clip=3.0, n=3):
+            m = w > 0
+            p = np.polyfit(xx[m], yv[m], deg, w=np.sqrt(w[m]))
+            for _ in range(n):
+                r = yv - np.polyval(p, xx)
+                sdev = 1.4826 * np.median(np.abs(r[m] - np.median(r[m]))) + 1e-9
+                m = (w > 0) & (np.abs(r) < clip * sdev)
+                p = np.polyfit(xx[m], yv[m], deg, w=np.sqrt(w[m]))
+            return p
+        pc = rpoly(np.where(good, cen0, 0.0), int(self.TRACE_DEG_CEN))
+        ps = rpoly(np.where(good, sig0, 1.0), int(self.TRACE_DEG_SIG))
+        center = np.polyval(pc, xx)
+        sigma = np.clip(np.polyval(ps, xx), 0.5, None)
+
+        amp = np.zeros(ncol); bg = np.zeros(ncol)
+        for i, c in enumerate(cols):
+            lo = max(int(center[i] - hw), 0); hi = min(int(center[i] + hw) + 1, nrows)
+            y = rows[lo:hi].astype(float); f = img[lo:hi, c]
+            G = np.exp(-0.5 * ((y - center[i]) / sigma[i]) ** 2)
+            A = np.vstack([G, np.ones_like(G)]).T
+            keep = np.ones(f.size, bool); a_, b_ = float(f.max()), float(np.median(f))
+            for _ in range(4):                               # robust amp/bg (clip spikes)
+                sol, *_ = np.linalg.lstsq(A[keep], f[keep], rcond=None); a_, b_ = sol
+                model = a_ * G + b_
+                noise = np.sqrt(np.maximum(g * np.maximum(model, 0.0) + rn2, 0.0)) / g
+                nk = np.abs(f - model) <= k * noise
+                if nk.sum() == keep.sum(): keep = nk; break
+                keep = nk
+            amp[i] = a_; bg[i] = b_
+
+        self.trace_center = center; self.trace_sigma = sigma
+        self.trace_amp = amp; self.trace_bg = bg
+        self.trace_polys = (pc, ps)
+        return center, sigma, amp, bg
+
+    def _apply_gaussian_regions(self):
+        """Science aperture = center ± KSIG·sigma. Dark = an equal-height band kept at
+        the same offset below the trace as the nominal geometry (geometrically
+        equivalent: same per-column height as the science aperture)."""
+        c = self.trace_center; s = self.trace_sigma; k = float(self.KSIG)
+        nom_sci = 0.5 * (self.yval1_sc + self.yval2_sc)
+        nom_dk  = 0.5 * (self.yval1_dk + self.yval2_dk)
+        dk_off = nom_sci - nom_dk                 # preserve the geometric separation
+        self.yval1_sc = c - k * s
+        self.yval2_sc = c + k * s
+        dkc = c - dk_off
+        self.yval1_dk = dkc - k * s
+        self.yval2_dk = dkc + k * s
 
     def plot_trace(self, title=None, vmin=None, vmax=None, ax=None):
         if title is None:
@@ -1332,6 +1418,123 @@ class CuteObservation:
         return fig, ax
 
     @classmethod
+    def plot_flux_dist(cls, items, wmin=2500.0, wmax=3300.0, ncols=4, bins=None,
+                       nsig=2.0, clip_iter=5, figsize=None, save=False, output_dir=None,
+                       fname='flux_dist.png', dpi=200, show=True):
+        """Grid, one panel per visit: per-FRAME integrated flux over [wmin,wmax].
+        Each visit is standardized by ITERATIVE nsig-sigma clipping -- fit mean/std,
+        reject |z|>nsig, refit on survivors until stable -- so a strong frame can't
+        mask itself by inflating sigma. The clean sample then has mean 0, std 1 in z
+        (top axis); frames beyond +/-nsig are outliers. Histogram and the +/-nsig cut
+        are shown in RAW flux (bottom axis)."""
+        n = len(items); nrows = int(np.ceil(n / ncols))
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize or (4.6 * ncols, 3.3 * nrows),
+                                 squeeze=False)
+        axf = axes.ravel()
+        for ax in axf[n:]:
+            ax.axis('off')
+        for ax, (label, csv_dir) in zip(axf, items):
+            fids, times, flux = cls._visit_frames(csv_dir, wmin, wmax)
+            if flux.size == 0:
+                ax.text(0.5, 0.5, f'{label}\n(no CSVs)', ha='center', va='center',
+                        transform=ax.transAxes); ax.set_title(label, fontsize=9); continue
+            # iterative sigma-clip -> mean/std of the clean sample
+            keep = np.ones(flux.size, bool)
+            mu = np.mean(flux); sd = np.std(flux) or 1.0
+            for _ in range(clip_iter):
+                mu = np.mean(flux[keep]); sd = np.std(flux[keep]) or 1e-30
+                nk = np.abs(flux - mu) <= nsig * sd
+                if nk.sum() == keep.sum():
+                    keep = nk; break
+                keep = nk
+            out = ~keep
+            lo, hi = mu - nsig * sd, mu + nsig * sd        # z = +/-nsig, back in raw flux
+            nb = bins or max(6, int(np.sqrt(flux.size)) + 1)
+            ax.hist(flux, bins=nb, color='0.80', edgecolor='0.4', lw=0.5)
+            ax.plot(flux[keep], np.zeros(keep.sum()), '|', color='navy', ms=12, mew=1.2)
+            if out.any():
+                ax.plot(flux[out], np.zeros(out.sum()), '|', color='red', ms=15, mew=2)
+            ax.axvline(mu, color='red', lw=1.5)
+            ax.axvline(lo, color='red', ls='--', lw=1.0, label=r'\sigma')
+            ax.axvline(hi, color='red', ls='--', lw=1.0)
+            ax.set_xlabel('integrated flux (raw)'); ax.set_ylabel('frames')
+            ax.set_title(f'{label}  N={flux.size}, \u03bc={mu:.0f}, \u03c3={sd:.1f}'
+                         + (f'  [{int(out.sum())} outlier, |z|>{nsig:g}]' if out.any() else ''),
+                         fontsize=8)
+            ax.grid(True, ls='--', lw=0.4, alpha=0.4)
+            # top axis: standardized z = (flux - mu)/sigma
+            fwd = lambda x, mu=mu, sd=sd: (x - mu) / sd
+            inv = lambda z, mu=mu, sd=sd: mu + z * sd
+            axz = ax.secondary_xaxis('top', functions=(fwd, inv))
+            #axz.set_xlabel('z = (flux\u2212\u03bc)/\u03c3', fontsize=7)
+            axz.set_xticks([-nsig, -1, 0, 1, nsig])
+            axz.xaxis.set_major_formatter(
+                ticker.FuncFormatter(lambda val, pos: "0" if val == 0 else rf"${val:g}\sigma$")
+            )
+            axz.tick_params(labelsize=8)
+        fig.suptitle(f'Per-frame flux distribution, standardized ({wmin:.0f}\u2013{wmax:.0f} \u00c5)\nz = (flux\u2212\u03bc)/\u03c3',
+                     fontsize=12)
+        fig.tight_layout()
+        if save:
+            os.makedirs(output_dir, exist_ok=True)
+            fig.savefig(os.path.join(output_dir, fname), dpi=dpi, bbox_inches='tight')
+            print(f"Saved {os.path.join(output_dir, fname)}")
+        if show:
+            plt.show()
+        return fig, axes
+
+    @classmethod
+    def plot_hot_v_total(cls, items, figsize=None, save=False, output_dir=None,
+                         fname='hotvtotal.png', dpi=200, show=True):
+        """One group per visit's brightest frame, split into science and dark. Three
+        overlapping bars per region: total pixels in the region (Sum wdth), the hot
+        pixels removed (Sum n_hot), and the resulting contributing pixels
+        (total - removed). Prints the science-minus-dark contributing difference."""
+        xs, xl, totals, hots, contribs, diffs = [], [], [], [], [], []
+        x = 0.0
+        for label, csv_path in items:
+            d = np.genfromtxt(csv_path, delimiter=',', names=True, comments='#')
+            nm = d.dtype.names
+            g = lambda name: np.nansum(np.asarray(d[name], float)) if name in nm else 0.0
+            tot_s, hot_s = g('wdth_sci'), g('n_hotsci')
+            tot_d, hot_d = g('wdth_dk'),  g('n_hotdk')
+            con_s, con_d = tot_s - hot_s, tot_d - hot_d
+            for reg, tot, hot, con in (('science', tot_s, hot_s, con_s),
+                                       ('dark', tot_d, hot_d, con_d)):
+                xs.append(x); xl.append(f'{label}\n{reg}')
+                totals.append(tot); hots.append(hot); contribs.append(con)
+                x += 1.0
+            x += 0.6                                   # gap between visits
+            diffs.append((label, con_s - con_d))
+        xs = np.array(xs)
+        W = 0.85
+        fig, ax = plt.subplots(figsize=figsize or (max(11, 1.0 * len(xs)), 5.5))
+        ax.bar(xs, totals,   width=W, color='mediumvioletred', alpha=0.70,
+               edgecolor='mediumvioletred', lw=1.6, hatch='//',  label='total pixels in region')
+        ax.bar(xs, contribs, width=W, color='dodgerblue', alpha=0.70,
+               edgecolor='dodgerblue', lw=1.6, hatch='\\\\', label='resulting contributing pixels')
+        ax.bar(xs, hots,     width=W, color='darkorange', alpha=0.75,
+               edgecolor='darkorange', lw=1.6, hatch='//',  label='hot pixels removed')
+        ax.set_xticks(xs); ax.set_xticklabels(xl, fontsize=7)
+        ax.set_ylabel('# pixels')
+        ax.set_title('Contributing Pixels after Hot Pixel Removal (Brightest frames only)')
+        ax.legend(fontsize=8, loc='upper right')
+        ax.grid(True, axis='y', ls='--', lw=0.5, alpha=0.4)
+        fig.tight_layout()
+
+        print("Absolute Difference in contributing pixels between science and dark regions in each visit:")
+        for label, dsd in diffs:
+            print(f"{label} : {abs(int(round(dsd)))} pixels")
+
+        if save:
+            os.makedirs(output_dir, exist_ok=True)
+            fig.savefig(os.path.join(output_dir, fname), dpi=dpi, bbox_inches='tight')
+            print(f"Saved {os.path.join(output_dir, fname)}")
+        if show:
+            plt.show()
+        return fig, ax
+
+    @classmethod
     def plot_solar_percent_diff(cls, items, ref_label='visit1',
                                 wmin=2900.0, wmax=3300.0, grid_A=1.0, smooth_A=10,
                                 band_nm=(248.0, 330.6), figsize=(9, 11),
@@ -1854,7 +2057,7 @@ class CuteObservation:
         return np.floor((t - np.nanmin(t)) / period_s).astype(int)
 
     @classmethod
-    def _frame_grid(cls, items, kind, wmin=2900.0, wmax=3300.0, orbit_period_s=5400.0,
+    def _frame_grid(cls, items, kind, wmin=2500.0, wmax=3300.0, orbit_period_s=5400.0,
                     ncols=4, cmap='tab10', figsize=None, save=False, output_dir=None,
                     fname='frames.png', dpi=200, show=True):
         """Grid, one panel per visit. kind: 'frame' | 'power' | 'loo'."""
@@ -1901,8 +2104,64 @@ class CuteObservation:
         kw.setdefault('fname', 'frame_flux.png'); return cls._frame_grid(items, 'frame', **kw)
 
     @classmethod
-    def plot_leave_one_out(cls, items, **kw):
-        kw.setdefault('fname', 'leave_one_out.png'); return cls._frame_grid(items, 'loo', **kw)
+    def plot_leave_one_out(cls, items, wmin=2500.0, wmax=3300.0, ncols=4, nsig=3.0,
+                           clip_iter=5, figsize=None, save=False, output_dir=None,
+                           fname='leave_one_out.png', dpi=200, show=True):
+        """Grid, one panel per visit: INFLUENCE of each frame on the visit mean.
+        Influence_i = (visit mean without frame i) - (full visit mean), in units of
+        the mean's standard error SE = sigma/sqrt(N). Equivalently (mu - x_i)/(N-1)/SE.
+        Zero = no effect; a positive stem means removing that (low) frame raises the
+        mean. The +/-1 SE guides show how large a single-frame effect is relative to
+        the mean's own uncertainty. Frames flagged as outliers by iterative nsig-sigma
+        clipping of the fluxes are drawn in red."""
+        n = len(items); nrows = int(np.ceil(n / ncols))
+        fig, axes = plt.subplots(nrows, ncols, figsize=figsize or (4.6 * ncols, 3.2 * nrows),
+                                 squeeze=False)
+        axf = axes.ravel()
+        for ax in axf[n:]:
+            ax.axis('off')
+        for ax, (label, csv_dir) in zip(axf, items):
+            fids, times, flux = cls._visit_frames(csv_dir, wmin, wmax)
+            if flux.size < 2:
+                ax.text(0.5, 0.5, f'{label}\n(too few frames)', ha='center', va='center',
+                        transform=ax.transAxes); ax.set_title(label, fontsize=9); continue
+            N = flux.size
+            mu = flux.mean()
+            se = flux.std(ddof=1) / np.sqrt(N) or 1e-30
+            infl = ((mu - flux) / (N - 1)) / se             # influence in SE units
+            # iterative sigma-clip on the fluxes to flag true outlier frames
+            keep = np.ones(N, bool)
+            for _ in range(clip_iter):
+                m = flux[keep].mean(); s = flux[keep].std() or 1e-30
+                nk = np.abs(flux - m) <= nsig * s
+                if nk.sum() == keep.sum():
+                    keep = nk; break
+                keep = nk
+            out = ~keep
+            x = fids.astype(float)
+            ax.axhline(0, color='0.5', lw=1)
+            ax.axhline(1, color='red', ls='--', lw=0.9)
+            ax.axhline(-1, color='red', ls='--', lw=0.9)
+            ax.vlines(x[~out], 0, infl[~out], color='navy', lw=1.3)
+            ax.plot(x[~out], infl[~out], 'o', color='navy', ms=5)
+            if out.any():
+                ax.vlines(x[out], 0, infl[out], color='red', lw=1.8)
+                ax.plot(x[out], infl[out], 'o', color='red', ms=7)
+            ax.set_title(f'{label}  N={N}'
+                         + (f'  [{int(out.sum())} outlier]' if out.any() else ''), fontsize=8)
+            ax.set_xlabel('frame removed (frmid)')
+            ax.set_ylabel('influence')
+            ax.grid(True, ls='--', lw=0.4, alpha=0.3)
+        fig.suptitle(f'"Leave-one-out" influence on visit mean ({wmin:.0f}\u2013{wmax:.0f} \u00c5)',
+                     fontsize=12)
+        fig.tight_layout()
+        if save:
+            os.makedirs(output_dir, exist_ok=True)
+            fig.savefig(os.path.join(output_dir, fname), dpi=dpi, bbox_inches='tight')
+            print(f"Saved {os.path.join(output_dir, fname)}")
+        if show:
+            plt.show()
+        return fig, axes
 
     @classmethod
     def plot_power_grid(cls, items, phase=None, mars_earth=None, mars_sun=None,

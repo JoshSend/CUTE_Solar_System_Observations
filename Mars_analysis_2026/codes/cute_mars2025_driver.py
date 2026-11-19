@@ -47,8 +47,10 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'power_grid' : power grid WIP
 # 'leave_one_out': 'leave one out' analysis WIP
 #   'hotpix_grid': hot pixel grid
+#   'flux_dist'  : distribution of per frame integrated flux
+#   'hotvtotal'  : bar plot of contributing pixels after hotpix removed
 
-MODE = 'power_grid'
+MODE = 'grid'
 
 # save figures/GIFs to the output folder
 SAVE = False
@@ -257,6 +259,17 @@ def main():
             skip_frmid=SKIP_FRMID,
             save=SAVE, output_dir=out_path
         )
+
+    elif MODE == 'hotvtotal':
+        items = []
+        for v, fid in BRIGHTEST.items():
+            hits = glob.glob(os.path.join(_brightness_csv(v), f"*frmid_{fid}*.csv"))
+            if hits:
+                items.append((v, hits[0]))
+            else:
+                print(f"  {v}: no CSV for frmid {fid}, skipping")
+        out = _get_output_dir(os.path.join(output_dir, 'hotvtotal')) if SAVE else None
+        CuteObservation.plot_hot_v_total(items, save=SAVE, output_dir=out, show=not SAVE)
  
     elif MODE == "visit":
         out_path = _visit_out(VISIT)
@@ -414,6 +427,11 @@ def main():
             {'frame_flux': CuteObservation.plot_frame_flux,
              'leave_one_out': CuteObservation.plot_leave_one_out}[MODE](
                 items, save=SAVE, output_dir=out, show=not SAVE)
+
+    elif MODE == 'flux_dist':
+        items = [(v, _brightness_csv(v)) for v in GRID_VISITS]
+        out = _get_output_dir(os.path.join(output_dir, 'flux_dist')) if SAVE else None
+        CuteObservation.plot_flux_dist(items, save=SAVE, output_dir=out, show=not SAVE)
 
     elif MODE == 'hotpix_grid':
         items = []
