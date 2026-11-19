@@ -49,8 +49,10 @@ from cute_mars2025 import CuteReference, CuteObservation, load_observation, _get
 #   'hotpix_grid': hot pixel grid
 #   'flux_dist'  : distribution of per frame integrated flux
 #   'hotvtotal'  : bar plot of contributing pixels after hotpix removed
+#                  DEPRECATED
+#                :
 
-MODE = 'grid'
+MODE = 'flux_dist'
 
 # save figures/GIFs to the output folder
 SAVE = False

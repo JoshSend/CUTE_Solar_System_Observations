@@ -459,15 +459,6 @@ class CuteObservation:
                                #       difference (rescales flux/albedo by ~1/n_sc).
     _hot_printed = set()
 
-    # ---- Gaussian trace extraction / inpainting ----
-    GAUSS_EXTRACT = True     # fit a smooth Gaussian trace; aperture & inpaint from it
-    KSIG          = 3.0      # science aperture half-width, in sigma (±3σ ≈ 99.7%)
-    INPAINT_SIGMA = 5.0      # replace a pixel by the model if |resid| > this × noise
-    TRACE_HALFWIN = 16       # rows each side of the nominal center used while fitting
-    TRACE_DEG_CEN = 2        # polynomial degree of center(column)
-    TRACE_DEG_SIG = 2        # polynomial degree of sigma(column)
-    TRUNC_CORR    = 0.900    # 2nd-moment de-bias factor for a ±2.5σ window
-
     def __init__(
         self, fits_fname, reference: CuteReference, visit=None, base_dir=None,
         track=True, widen=True,
@@ -486,28 +477,23 @@ class CuteObservation:
         self.trace_fwhm = 0.0
         self.sci_grow = 0.0
         self._build_regions()                       # nominal box
-        self.row_offset = 0.0
-        
-        self.trace_fwhm = 0.0
-        self.sci_grow = 0.0
-        self._build_regions()                       # nominal geometry (seeds the fit)
-        if self.GAUSS_EXTRACT:
-            self._fit_trace_model()                 # smooth Gaussian trace
-            self._apply_gaussian_regions()          # aperture = center ± KSIG·sigma
+        if track:
+            self.row_offset, self.trace_fwhm = self._measure_trace_shape()
+
+        # Pick the science half-height:
+        #   SCI_HALF set -> FIXED width (2*SCI_HALF rows), ignores FWHM
+        #   elif widen   -> adaptive, APERTURE * FWHM
+        #   else         -> nominal box height
+        i_mid = len(self.xval) // 2
+        h0 = 0.5 * (self.yval2_sc[i_mid] - self.yval1_sc[i_mid])   # nominal half-height
+        if self.SCI_HALF is not None:
+            target_half = self.SCI_HALF
+        elif widen and self.trace_fwhm > 0:
+            target_half = self.APERTURE * (self.trace_fwhm / 2.0)
         else:
-            if track:
-                self.row_offset, self.trace_fwhm = self._measure_trace_shape()
-            i_mid = len(self.xval) // 2
-            h0 = 0.5 * (self.yval2_sc[i_mid] - self.yval1_sc[i_mid])
-            if self.SCI_HALF is not None:
-                target_half = self.SCI_HALF
-            elif widen and self.trace_fwhm > 0:
-                target_half = self.APERTURE * (self.trace_fwhm / 2.0)
-            else:
-                target_half = h0
-            self.sci_grow = max(target_half - h0, 1 - h0)
-            self._build_regions(row_shift=self.row_offset, sci_grow=self.sci_grow)
-        self.spectra = self.extract_spectrum()
+            target_half = h0
+        self.sci_grow = max(target_half - h0, 1 - h0)      # never below ~1px
+        self._build_regions(row_shift=self.row_offset, sci_grow=self.sci_grow)
 
         self.spectra = self.extract_spectrum()
         self.flux = self._compute_flux()
@@ -617,72 +603,81 @@ class CuteObservation:
     # --------- reduction ---------
 
     def _build_hot_mask(self):
-        """Boolean hot-pixel mask: isolated positive spikes relative to the local
-        median along the DISPERSION direction, so the smoothly-varying spectrum and
-        the cross-dispersion trace profile are preserved (the trace is never flagged)."""
+        """Boolean hot-pixel mask, plus the along-dispersion median image used both to
+        detect spikes and to estimate their replacement. A pixel is hot when it rises
+        more than HOT_SIGMA robust-sigma above its local dispersion median; that same
+        median is the smooth-spectrum value used to inpaint it (stored on self)."""
         from scipy.ndimage import median_filter
         img = self.img.astype(float)
         w = max(int(self.HOT_WIN) | 1, 3)                       # odd window, >= 3
-        resid = img - median_filter(img, size=(1, w), mode='nearest')
+        medf = median_filter(img, size=(1, w), mode='nearest')
+        resid = img - medf
         mad = np.median(np.abs(resid - np.median(resid))) + 1e-9
+        self._hot_model = medf                                  # per-pixel replacement
         return resid > self.HOT_SIGMA * 1.4826 * mad
     
     def extract_spectrum(self):
-        img = self.img.astype(float)
-        nrows = img.shape[0]; rows = np.arange(nrows)
-        g = self.GAIN; rn2 = self.READ_NOISE ** 2
+        dk_arr = np.zeros(2048, dtype=float)
+        sc_arr = np.zeros(2048, dtype=float)
+        err_arr = np.zeros(2048, dtype=float)          # 1-sigma error, in DN
+        nrows = self.img.shape[0]
+        g = self.GAIN
+        rn2 = self.READ_NOISE ** 2
         clamp = lambda v: min(max(int(round(v)), 0), nrows)
-        k = float(self.INPAINT_SIGMA)
-        cen = self.trace_center; sig = self.trace_sigma
-        amp = self.trace_amp; bg = self.trace_bg
 
-        sc_arr = np.zeros(2048); dk_arr = np.zeros(2048); err_arr = np.zeros(2048)
+        hot = self._build_hot_mask() if self.HOT_REJECT else np.zeros(self.img.shape, bool)
         self.n_hot_sci = self.n_hot_dk = 0
-        self.n_hot_sci_col = np.zeros(2048, int); self.n_hot_dk_col = np.zeros(2048, int)
-        self.wdth_sci_col  = np.zeros(2048, int); self.wdth_dk_col  = np.zeros(2048, int)
+        self.n_hot_sci_col = np.zeros(2048, dtype=int)
+        self.n_hot_dk_col  = np.zeros(2048, dtype=int)
+        self.wdth_sci_col  = np.zeros(2048, dtype=int)
+        self.wdth_dk_col   = np.zeros(2048, dtype=int)
 
         for i in range(2048):
             col = self.xval[i]
-            # ---- dark strip: inpaint spikes toward the local background ----
+
+            # ---- dark strip: mean of hot-pixel-free pixels ----
             yy1, yy2 = clamp(self.yval1_dk[i]), clamp(self.yval2_dk[i])
-            self.wdth_dk_col[i] = yy2 - yy1
-            dk = img[yy1:yy2, col].copy()
-            if dk.size:
-                med = np.median(dk)
-                nmad = 1.4826 * np.median(np.abs(dk - med)) + 1e-9
-                bad = np.abs(dk - med) > k * nmad
-                self.n_hot_dk_col[i] = int(bad.sum()); self.n_hot_dk += int(bad.sum())
-                dk[bad] = med                      # estimate = local background
-                m_dk = float(dk.mean()); n_dk = dk.size
-            else:
-                m_dk = 0.0; n_dk = 1
+            dk_pix = self.img[yy1:yy2, col].astype(float)
+            dk_hot = hot[yy1:yy2, col]
+            self.n_hot_dk_col[i] = int(dk_hot.sum())
+            self.wdth_dk_col[i]  = yy2 - yy1  
+            self.n_hot_dk += self.n_hot_dk_col[i]
+            dk_good = dk_pix[~dk_hot]
+            dk_pix[dk_hot] = self._hot_model[yy1:yy2, col][dk_hot]   # inpaint, don't drop
+            n_dk = dk_pix.size
+            m_dk = float(dk_pix.mean()) if n_dk else 0.0
             dk_arr[i] = m_dk
 
-            # ---- science box: inpaint spikes toward the Gaussian model ----
+            # ---- science box: mean of hot-pixel-free pixels ----
             yy3, yy4 = clamp(self.yval1_sc[i]), clamp(self.yval2_sc[i])
-            n_sc = yy4 - yy3; self.wdth_sci_col[i] = n_sc
+            n_sc = yy4 - yy3                             # full aperture height (rows)
             if n_sc <= 0:
                 continue
-            y = rows[yy3:yy4].astype(float)
-            sc = img[yy3:yy4, col].copy()
-            model = amp[i] * np.exp(-0.5 * ((y - cen[i]) / sig[i]) ** 2) + bg[i]
-            noise = np.sqrt(np.maximum(g * np.maximum(model, 0.0) + rn2, 0.0)) / g
-            bad = np.abs(sc - model) > k * noise
-            self.n_hot_sci_col[i] = int(bad.sum()); self.n_hot_sci += int(bad.sum())
-            sc[bad] = model[bad]                   # estimate = fitted profile value
-            m_sc = float(sc.mean())                # AVERAGED column value (not aperture sum)
+            sc_pix = self.img[yy3:yy4, col].astype(float)
+            sc_hot = hot[yy3:yy4, col]
+            self.n_hot_sci_col[i] = int(sc_hot.sum())
+            self.wdth_sci_col[i]  = n_sc
+            self.n_hot_sci += self.n_hot_sci_col[i]
+            sc_pix[sc_hot] = self._hot_model[yy3:yy4, col][sc_hot]   # inpaint, don't drop
+            n_sc_good = sc_pix.size
+            m_sc = float(sc_pix.mean())
 
-            sc_arr[i] = m_sc - m_dk                # mean dark-subtracted signal
-            var_sc = (g * max(m_sc, 0.0) + rn2) / g ** 2 / max(n_sc, 1)
+            sig = m_sc - m_dk                           # per-pixel dark-subtracted signal
+            sc_arr[i] = (n_sc * sig) if self.APERTURE_SUM else sig
+
+            # error on the mean-difference signal (e- -> DN), scaled to the aperture
+            var_sc = (g * max(m_sc, 0.0) + rn2) / g ** 2 / max(n_sc_good, 1)
             var_dk = (g * max(m_dk, 0.0) + rn2) / g ** 2 / max(n_dk, 1)
-            err_arr[i] = np.sqrt(max(var_sc + var_dk, 0.0))
+            scale = n_sc if self.APERTURE_SUM else 1.0
+            err_arr[i] = scale * np.sqrt(max(var_sc + var_dk, 0.0))
 
         self.sc_err_dn = err_arr
-        key = (self.visit, self.frame_id)
-        if key not in type(self)._hot_printed:
-            type(self)._hot_printed.add(key)
-            print(f"  {self.visit} frmid {self.frame_id}: hot pixels inpainted "
-                  f"(science {self.n_hot_sci}, dark {self.n_hot_dk})")
+        if self.HOT_REJECT:
+            key = (self.visit, self.frame_id)
+            if key not in type(self)._hot_printed:
+                type(self)._hot_printed.add(key)
+                print(f"  {self.visit} frmid {self.frame_id}: hot pixels removed "
+                      f"(science {self.n_hot_sci}, dark {self.n_hot_dk})")
         return sc_arr
 
     def _compute_flux(self):
@@ -775,87 +770,6 @@ class CuteObservation:
             return parts[idx + 1]
 
         return "Unknown"
-
-    def _fit_trace_model(self):
-        """Smooth cross-dispersion trace model f(x,y)=A(x)·exp[-(y-yc(x))²/2σ(x)²]+B(x).
-        Stage 1: per-column centroid/width by an iterative ±2.5σ truncated moment.
-        Stage 2: low-order polynomials yc(x), σ(x) across columns, brightness-weighted
-                 and 3σ-clipped so hot columns can't bend the trace.
-        Stage 3: with yc, σ fixed, solve each column's A, B by a robust (clipped)
-                 linear least-squares. Sets self.trace_center/-sigma/-amp/-bg."""
-        img = self.img.astype(float)
-        nrows = img.shape[0]; rows = np.arange(nrows)
-        cols = self.xval; ncol = len(cols)
-        hw = int(self.TRACE_HALFWIN)
-        g = self.GAIN; rn2 = self.READ_NOISE ** 2
-        k = float(self.INPAINT_SIGMA)
-        nom = 0.5 * (self.yval1_sc + self.yval2_sc)          # nominal center (seed)
-
-        cen0 = np.full(ncol, np.nan); sig0 = np.full(ncol, np.nan); amp0 = np.full(ncol, np.nan)
-        for i, c in enumerate(cols):
-            lo = max(int(nom[i] - hw), 0); hi = min(int(nom[i] + hw) + 1, nrows)
-            ys = rows[lo:hi].astype(float); f = img[lo:hi, c]
-            b = np.median(f); mu, sg = float(nom[i]), 3.0
-            for _ in range(4):                               # iterative ±2.5σ moment
-                m = (ys >= mu - 2.5 * sg) & (ys <= mu + 2.5 * sg)
-                s = np.clip(f[m] - b, 0, None); tot = s.sum()
-                if tot <= 0: break
-                mu = (ys[m] * s).sum() / tot
-                sg = np.sqrt(max((s * (ys[m] - mu) ** 2).sum() / tot, 0.25))
-            cen0[i] = mu; sig0[i] = sg / self.TRUNC_CORR     # de-bias truncation
-            amp0[i] = np.clip(f - b, 0, None).sum()
-
-        xx = cols.astype(float)
-        good = np.isfinite(cen0) & np.isfinite(sig0) & (amp0 > 0)
-        w = np.where(good, amp0, 0.0)
-        def rpoly(yv, deg, clip=3.0, n=3):
-            m = w > 0
-            p = np.polyfit(xx[m], yv[m], deg, w=np.sqrt(w[m]))
-            for _ in range(n):
-                r = yv - np.polyval(p, xx)
-                sdev = 1.4826 * np.median(np.abs(r[m] - np.median(r[m]))) + 1e-9
-                m = (w > 0) & (np.abs(r) < clip * sdev)
-                p = np.polyfit(xx[m], yv[m], deg, w=np.sqrt(w[m]))
-            return p
-        pc = rpoly(np.where(good, cen0, 0.0), int(self.TRACE_DEG_CEN))
-        ps = rpoly(np.where(good, sig0, 1.0), int(self.TRACE_DEG_SIG))
-        center = np.polyval(pc, xx)
-        sigma = np.clip(np.polyval(ps, xx), 0.5, None)
-
-        amp = np.zeros(ncol); bg = np.zeros(ncol)
-        for i, c in enumerate(cols):
-            lo = max(int(center[i] - hw), 0); hi = min(int(center[i] + hw) + 1, nrows)
-            y = rows[lo:hi].astype(float); f = img[lo:hi, c]
-            G = np.exp(-0.5 * ((y - center[i]) / sigma[i]) ** 2)
-            A = np.vstack([G, np.ones_like(G)]).T
-            keep = np.ones(f.size, bool); a_, b_ = float(f.max()), float(np.median(f))
-            for _ in range(4):                               # robust amp/bg (clip spikes)
-                sol, *_ = np.linalg.lstsq(A[keep], f[keep], rcond=None); a_, b_ = sol
-                model = a_ * G + b_
-                noise = np.sqrt(np.maximum(g * np.maximum(model, 0.0) + rn2, 0.0)) / g
-                nk = np.abs(f - model) <= k * noise
-                if nk.sum() == keep.sum(): keep = nk; break
-                keep = nk
-            amp[i] = a_; bg[i] = b_
-
-        self.trace_center = center; self.trace_sigma = sigma
-        self.trace_amp = amp; self.trace_bg = bg
-        self.trace_polys = (pc, ps)
-        return center, sigma, amp, bg
-
-    def _apply_gaussian_regions(self):
-        """Science aperture = center ± KSIG·sigma. Dark = an equal-height band kept at
-        the same offset below the trace as the nominal geometry (geometrically
-        equivalent: same per-column height as the science aperture)."""
-        c = self.trace_center; s = self.trace_sigma; k = float(self.KSIG)
-        nom_sci = 0.5 * (self.yval1_sc + self.yval2_sc)
-        nom_dk  = 0.5 * (self.yval1_dk + self.yval2_dk)
-        dk_off = nom_sci - nom_dk                 # preserve the geometric separation
-        self.yval1_sc = c - k * s
-        self.yval2_sc = c + k * s
-        dkc = c - dk_off
-        self.yval1_dk = dkc - k * s
-        self.yval2_dk = dkc + k * s
 
     def plot_trace(self, title=None, vmin=None, vmax=None, ax=None):
         if title is None:
