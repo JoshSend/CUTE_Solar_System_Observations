@@ -26,6 +26,7 @@ import matplotlib.pyplot as plt
 # --- specreduce / specutils ---
 from specreduce.tracing import FitTrace
 from specutils import Spectrum
+from specutils.manipulation import gaussian_smooth
 from specreduce.background import Background
 from specreduce.extract import HorneExtract
 
@@ -200,8 +201,9 @@ class Subtraction:
         nx, nrows = img.shape[1], img.shape[0]
         xcol = np.arange(nx - self.XLO_OFF, nx - self.XHI_OFF)        # 2048 science cols
         hot, medf = self._hot_mask(img)
-        cen_full = self._trace_center(img)                    # robust, hot-suppressed
-        clean = self._profile_inpaint(img, hot, cen_full)     # repairs science + dark
+        cen_full = self._trace_center(img)
+        clean = img.astype(float).copy()
+        clean[hot] = medf[hot]          # estimate EVERY hot pixel from its dispersion neighbors
 
         cen_x = cen_full[xcol]
 
@@ -242,6 +244,7 @@ class Subtraction:
             plt.show()
 
     def plot_spectrum(self, R, out, title):
+        spec_s = gaussian_smooth(R['spec'], stddev=2)      # ~matches the old boxcar look
         w = R['spec'].spectral_axis.value; fl = R['spec'].flux.value
         fig, ax = plt.subplots(figsize=(10, 4))
         ax.plot(w, fl, color='maroon', lw=0.9)
